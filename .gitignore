@@ -5,3 +5,8 @@ results/
 .claude/settings.local.json
 # imagen muy pesada (13MB) — guardar en Google Drive
 dataset/reference/04_office_stuff.jpg
+
+# backups personales y ZIPs grandes
+Vision/
+Vision.zip
+*.zip

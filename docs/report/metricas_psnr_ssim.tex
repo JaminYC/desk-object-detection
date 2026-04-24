@@ -1,0 +1,385 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Encoding e idioma ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+
+% ---------- Diseño de página ----------
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ---------- Matemáticas ----------
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+
+% ---------- Figuras y tablas ----------
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{float}
+
+% ---------- Color ----------
+\usepackage{xcolor}
+\definecolor{azulPSNR}{rgb}{0.10,0.35,0.65}
+\definecolor{verdeSSIM}{rgb}{0.10,0.55,0.25}
+
+% ---------- Enlaces ----------
+\usepackage[colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
+
+% ---------- Metadatos ----------
+\title{
+    \vspace{-1.5cm}
+    \textbf{Métricas de Calidad de Imagen} \\[0.3cm]
+    \Large PSNR y SSIM: Definición, Fórmulas e Interpretación
+}
+\author{Jamin Yauri Cajas}
+\date{\today}
+
+% ============================================================
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Este documento explica de forma clara las dos métricas más usadas en procesamiento
+de imágenes para comparar una imagen procesada contra una de referencia:
+\textbf{PSNR} (Peak Signal-to-Noise Ratio) y \textbf{SSIM} (Structural Similarity
+Index Measure). Se presentan sus fórmulas matemáticas, el significado intuitivo
+de cada término, ejemplos numéricos, sus rangos típicos y, sobre todo, las
+limitaciones que cada una arrastra. Finalmente se interpreta su significado
+particular en el contexto del pipeline de preprocesamiento de imágenes de
+escritorio, donde ambas métricas se aplican entre la imagen \emph{original} y
+la imagen \emph{preprocesada}.
+\end{abstract}
+
+% ============================================================
+\section{¿Qué problema resuelven estas métricas?}
+
+Cuando se modifica una imagen — por compresión, por ruido, o por un pipeline de
+preprocesamiento como el nuestro — necesitamos una forma \textbf{numérica} de
+responder a la pregunta: \emph{¿qué tan parecida es la imagen modificada a la
+original?} Mirar con los ojos funciona para una imagen; para evaluar miles
+necesitamos métricas objetivas.
+
+PSNR y SSIM son las dos métricas clásicas, y son \textbf{complementarias}:
+
+\begin{itemize}
+    \item \textbf{PSNR} mide la diferencia \emph{píxel a píxel}. Es rápida, intuitiva,
+          pero ciega a cómo percibe el ojo humano.
+    \item \textbf{SSIM} mide la similitud \emph{estructural}. Está inspirada en la
+          visión humana: si dos imágenes tienen la misma estructura (bordes,
+          contraste, texturas) aunque los píxeles difieran, SSIM las considera
+          parecidas.
+\end{itemize}
+
+% ============================================================
+\section{\textcolor{azulPSNR}{PSNR} — Peak Signal-to-Noise Ratio}
+
+\subsection{Definición intuitiva}
+
+PSNR responde la pregunta: \emph{¿qué tan alta es la señal comparada con el
+error introducido?} Se expresa en \textbf{decibelios (dB)}, una escala
+logarítmica: más dB = menos diferencia = mejor.
+
+\subsection{Fórmula matemática}
+
+PSNR se calcula a partir del \textbf{error cuadrático medio} (MSE). Dadas dos
+imágenes \(I\) y \(K\) de tamaño \(H \times W\):
+
+\begin{equation}
+    \operatorname{MSE}(I, K) = \frac{1}{HW} \sum_{i=1}^{H} \sum_{j=1}^{W}
+    \bigl[ I(i,j) - K(i,j) \bigr]^2.
+    \label{eq:mse}
+\end{equation}
+
+\vspace{0.3cm}
+\noindent
+El MSE es simplemente el \textbf{promedio de las diferencias al cuadrado} entre
+cada par de píxeles. Si las dos imágenes son idénticas, MSE = 0. Si son muy
+distintas, el MSE crece.
+
+A partir del MSE se calcula PSNR:
+
+\begin{equation}
+    \boxed{\;
+    \operatorname{PSNR}(I, K) = 10 \cdot \log_{10}\!\left(\frac{\operatorname{MAX}^2}{\operatorname{MSE}(I,K)}\right)
+    \;}
+    \label{eq:psnr}
+\end{equation}
+
+donde \(\operatorname{MAX}\) es el valor máximo que puede tomar un píxel:
+\(\operatorname{MAX} = 255\) para imágenes \texttt{uint8}, o \(\operatorname{MAX} = 1\)
+para imágenes \texttt{double} en \([0,1]\) (como en nuestro pipeline).
+
+\subsection{¿Por qué logarítmica?}
+
+Porque la percepción humana del ruido también lo es: la diferencia entre una
+imagen con MSE = 0.01 y una con MSE = 0.001 es enorme a la vista, y el logaritmo
+la amplifica de forma legible. Además, expresar la relación en decibelios
+permite comparar órdenes de magnitud muy distintas en una escala cómoda.
+
+\subsection{Ejemplo numérico}
+
+Supongamos dos imágenes de \(2 \times 2\) píxeles, en rango \([0,1]\):
+
+\[
+I = \begin{pmatrix} 0.5 & 0.4 \\ 0.6 & 0.5 \end{pmatrix}, \qquad
+K = \begin{pmatrix} 0.52 & 0.39 \\ 0.61 & 0.48 \end{pmatrix}.
+\]
+
+Cálculo del MSE:
+\begin{align*}
+\operatorname{MSE} &= \frac{1}{4}\bigl[(0.02)^2 + (0.01)^2 + (0.01)^2 + (0.02)^2\bigr] \\
+                   &= \frac{1}{4}\bigl[0.0004 + 0.0001 + 0.0001 + 0.0004\bigr] = 0.00025.
+\end{align*}
+
+PSNR con \(\operatorname{MAX} = 1\):
+\[
+\operatorname{PSNR} = 10 \cdot \log_{10}\!\left(\frac{1}{0.00025}\right) = 10 \cdot \log_{10}(4000) \approx 36{,}02 \text{ dB}.
+\]
+
+\subsection{Rangos típicos e interpretación}
+
+\begin{table}[H]
+\centering
+\caption{Interpretación cualitativa de PSNR (imágenes naturales).}
+\begin{tabular}{@{}cl@{}}
+\toprule
+PSNR (dB) & Calidad percibida \\
+\midrule
+\(> 40\)      & Virtualmente idéntica (compresión de alta calidad) \\
+\(30 \text{ a } 40\) & Muy similar (pocas diferencias visibles) \\
+\(20 \text{ a } 30\) & Diferencias notables (pipeline activo) \\
+\(< 20\)      & Diferencias muy fuertes (fuerte modificación o error) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Limitaciones importantes}
+
+PSNR tiene dos debilidades críticas:
+
+\begin{enumerate}
+    \item \textbf{Es ciego a la estructura.} Si a una foto le desplazas todos los
+          píxeles un solo píxel hacia la derecha, visualmente sigue siendo
+          prácticamente la misma imagen, pero el MSE es enorme y el PSNR se
+          desploma.
+    \item \textbf{No modela el ojo humano.} Las personas percibimos peor el error
+          en regiones texturizadas que en regiones planas; PSNR trata ambas por
+          igual.
+\end{enumerate}
+
+Por eso, en investigación moderna se combina PSNR con SSIM o con métricas
+perceptuales basadas en redes neuronales (LPIPS, DISTS).
+
+% ============================================================
+\section{\textcolor{verdeSSIM}{SSIM} — Structural Similarity Index Measure}
+
+\subsection{Definición intuitiva}
+
+SSIM responde una pregunta muy distinta a PSNR: \emph{¿las dos imágenes tienen
+la misma estructura?} Está inspirada en el \textbf{Sistema Visual Humano}, que
+no mira píxel por píxel, sino que percibe:
+
+\begin{itemize}
+    \item La \textbf{luminancia} (brillo promedio).
+    \item El \textbf{contraste} (cuánto varía la intensidad).
+    \item La \textbf{estructura} (los patrones y bordes).
+\end{itemize}
+
+SSIM produce un valor entre \(-1\) y \(+1\):
+\begin{itemize}
+    \item \(\operatorname{SSIM} = 1\) : imágenes idénticas.
+    \item \(\operatorname{SSIM} \approx 0\) : sin relación estructural.
+    \item \(\operatorname{SSIM} < 0\) : imágenes estructuralmente opuestas (raro).
+\end{itemize}
+
+En la práctica, valores por encima de \(0{,}9\) indican imágenes visualmente
+equivalentes.
+
+\subsection{Fórmula matemática}
+
+SSIM se calcula sobre ventanas (parches) de la imagen. Para dos parches \(x\) y
+\(y\) extraídos en la misma posición de las dos imágenes:
+
+\begin{equation}
+    \boxed{\;
+    \operatorname{SSIM}(x,y) =
+    \underbrace{\left[\frac{2\mu_x \mu_y + c_1}{\mu_x^2 + \mu_y^2 + c_1}\right]}_{l(x,y)\,:\text{ luminancia}} \cdot
+    \underbrace{\left[\frac{2\sigma_x \sigma_y + c_2}{\sigma_x^2 + \sigma_y^2 + c_2}\right]}_{c(x,y)\,:\text{ contraste}} \cdot
+    \underbrace{\left[\frac{\sigma_{xy} + c_3}{\sigma_x \sigma_y + c_3}\right]}_{s(x,y)\,:\text{ estructura}}
+    \;}
+    \label{eq:ssim}
+\end{equation}
+
+donde:
+\begin{itemize}
+    \item \(\mu_x, \mu_y\): medias de cada parche (\textbf{luminancia promedio}).
+    \item \(\sigma_x, \sigma_y\): desviaciones estándar (\textbf{contraste local}).
+    \item \(\sigma_{xy}\): covarianza entre los parches (\textbf{patrón estructural compartido}).
+    \item \(c_1, c_2, c_3\): constantes pequeñas que estabilizan la fórmula cuando los denominadores son casi cero.
+\end{itemize}
+
+El SSIM global de la imagen es el \textbf{promedio} de los SSIM de todas las
+ventanas.
+
+\subsection{Interpretación de los tres componentes}
+
+La fórmula se lee como el producto de tres comparaciones \textbf{independientes}:
+
+\begin{enumerate}
+    \item \(l(x,y)\) compara \textbf{brillos}: si \(\mu_x \approx \mu_y\), este
+          término vale \(\approx 1\).
+    \item \(c(x,y)\) compara \textbf{contrastes}: si \(\sigma_x \approx \sigma_y\),
+          este término vale \(\approx 1\).
+    \item \(s(x,y)\) compara \textbf{estructuras}: si los patrones locales
+          coinciden (mismo borde, misma textura), este término vale \(\approx 1\).
+\end{enumerate}
+
+El producto final de los tres es 1 solo si los tres aspectos coinciden.
+\textbf{Este es el poder de SSIM}: separa brillo, contraste y estructura, y un
+cambio en cualquiera de ellos se penaliza de forma independiente y explícita.
+
+\subsection{Ejemplo conceptual: por qué SSIM es mejor que PSNR}
+
+Imagina dos modificaciones a una foto:
+
+\begin{enumerate}
+    \item \textbf{Suma un valor constante} a todos los píxeles (subir el brillo
+          \(+0{,}1\)).
+    \item \textbf{Introduce ruido aleatorio} con amplitud \(\pm 0{,}1\).
+\end{enumerate}
+
+Ambas producen el \textbf{mismo MSE} y, por tanto, el \textbf{mismo PSNR}. Pero:
+
+\begin{itemize}
+    \item El primer caso (brillo subido) \textbf{conserva la estructura}: solo
+          ves la foto más clara. El SSIM es alto.
+    \item El segundo caso (ruido) \textbf{destruye la estructura}. El SSIM cae.
+\end{itemize}
+
+Esto coincide con la percepción humana: el ruido molesta, una corrección de
+brillo no.
+
+\subsection{Rangos típicos e interpretación}
+
+\begin{table}[H]
+\centering
+\caption{Interpretación cualitativa de SSIM.}
+\begin{tabular}{@{}cl@{}}
+\toprule
+SSIM & Calidad percibida \\
+\midrule
+\(> 0{,}95\)        & Visualmente idénticas \\
+\(0{,}85 - 0{,}95\) & Diferencias sutiles, estructura intacta \\
+\(0{,}70 - 0{,}85\) & Diferencias notables pero reconocible \\
+\(< 0{,}70\)        & Cambios estructurales fuertes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Limitaciones de SSIM}
+
+\begin{enumerate}
+    \item \textbf{Sensible al tamaño de ventana.} El valor depende del tamaño del
+          parche utilizado (típicamente \(11\times 11\) gaussiano).
+    \item \textbf{Trabaja en escala de grises.} Para imágenes a color, se aplica
+          sobre la luminancia. Un cambio de tinte sin cambio de estructura no lo
+          detecta bien.
+    \item \textbf{No es distancia.} No se puede interpretar como porcentaje
+          riguroso; es un índice de similitud perceptual.
+\end{enumerate}
+
+% ============================================================
+\section{PSNR vs. SSIM — tabla comparativa}
+
+\begin{table}[H]
+\centering
+\caption{Comparación directa de PSNR y SSIM.}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{0.28\textwidth} p{0.32\textwidth} p{0.32\textwidth}@{}}
+\toprule
+ & \textbf{PSNR} & \textbf{SSIM} \\
+\midrule
+\textbf{Qué mide} & Diferencia píxel a píxel & Similitud estructural \\
+\textbf{Unidad} & Decibelios (dB) & Índice sin unidad \\
+\textbf{Rango} & \([0, \infty)\); ideal \(> 30\) & \([-1, 1]\); ideal \(> 0{,}95\) \\
+\textbf{Interpretación} & Cuantitativa, dB & Cualitativa, perceptual \\
+\textbf{Sensibilidad humana} & Baja & Alta (diseñada para el ojo) \\
+\textbf{Cálculo} & Simple, rápido & Requiere ventanas deslizantes \\
+\textbf{Detecta cambios de brillo} & Sí (penaliza) & Poco (los tolera) \\
+\textbf{Detecta ruido} & Sí & Sí (más fuerte) \\
+\textbf{Detecta desplazamiento} & Muy penalizante & Menos penalizante \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+\section{Interpretación en este proyecto}
+
+En el pipeline de preprocesamiento, las dos métricas se calculan entre la
+imagen \textbf{original} y la imagen \textbf{preprocesada}. No existe un
+\emph{ground truth} (imagen perfecta) con el cual compararlas.
+
+Esto implica una interpretación \textbf{invertida} respecto al uso clásico:
+
+\begin{itemize}
+    \item En un contexto de compresión o denoising, se quiere un PSNR/SSIM
+          \textbf{alto}: la imagen reconstruida debe parecerse lo más posible
+          a la original limpia.
+    \item En nuestro contexto, un PSNR/SSIM \textbf{bajo} significa que el
+          pipeline \textbf{modificó mucho} la imagen de entrada. Esto es bueno
+          cuando la imagen original tenía defectos (ruido, mal balance de blancos,
+          iluminación irregular): el pipeline está trabajando.
+\end{itemize}
+
+\subsection{Ejemplos concretos del dataset}
+
+De la Tabla de métricas del informe principal:
+
+\begin{itemize}
+    \item \texttt{p06\_stationery2}: PSNR 29.40, SSIM 0.964. Imagen con buena
+          iluminación y color balanceado. El pipeline apenas la modifica porque
+          ya estaba bien.
+    \item \texttt{p08\_stationery4}: PSNR 13.66, SSIM 0.599. Imagen con fuerte
+          dominante cromática y mala iluminación. El pipeline la modifica
+          agresivamente, por eso ambas métricas son bajas — no es un fallo,
+          es el comportamiento esperado.
+    \item \texttt{p12\_markers\_holder}: PSNR 22.88, SSIM 0.353. Aquí el PSNR
+          es moderado pero el SSIM es bajo — el pipeline introdujo cambios
+          estructurales (probablemente la ecualización reveló texturas antes
+          sumidas en sombra).
+\end{itemize}
+
+\subsection{¿Qué métrica se debe creer más?}
+
+Para este proyecto, \textbf{SSIM es la métrica más informativa} porque:
+
+\begin{enumerate}
+    \item Es más sensible a cambios estructurales reales (las cosas que importan
+          para la detección posterior).
+    \item Correlaciona mejor con la percepción humana de ``¿se ve mejor?''.
+    \item Distingue cambios de brillo (benéficos) de cambios de estructura
+          (potencialmente dañinos).
+\end{enumerate}
+
+PSNR se reporta porque es estándar y da una referencia dimensional, pero en un
+pipeline de \textbf{realce} (no de reconstrucción) su valor absoluto es menos
+crítico que el de SSIM.
+
+% ============================================================
+\section{Conclusión}
+
+PSNR y SSIM miden dos aspectos distintos de la similitud entre imágenes:
+\textbf{PSNR} mide la diferencia cuantitativa píxel a píxel en decibelios,
+ideal por su simplicidad y rapidez pero ciega a la estructura; \textbf{SSIM}
+mide la similitud perceptual descomponiendo la comparación en tres componentes
+(luminancia, contraste, estructura), más costosa pero mucho más coherente con
+la visión humana. Ambas se reportan juntas porque son complementarias: PSNR
+da la magnitud, SSIM da el significado. En el contexto del preprocesamiento
+de imágenes de escritorio, su interpretación se invierte respecto al uso
+clásico — valores bajos no son un defecto, sino evidencia de que el algoritmo
+está corrigiendo defectos reales de la imagen de entrada.
+
+\end{document}

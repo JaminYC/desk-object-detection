@@ -11,7 +11,7 @@
 clear; close all; clc;
 
 % ---------- Configuración ----------
-projectRoot = fileparts(fileparts(mfilename('fullpath')));  % sube desde src/
+projectRoot = fileparts(mfilename('fullpath'));  % el script está en la raíz
 addpath(genpath(fullfile(projectRoot, 'src')));
 
 rawDir       = fullfile(projectRoot, 'dataset', 'raw');

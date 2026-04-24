@@ -1,0 +1,544 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Encoding e idioma ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+
+% ---------- Diseño de página ----------
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ---------- Matemáticas ----------
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+
+% ---------- Figuras y tablas ----------
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{float}
+
+% ---------- Color y cajas ----------
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, breakable}
+
+\definecolor{colLAB}{RGB}{155, 89, 182}
+\definecolor{colCLAHE}{RGB}{52, 152, 219}
+\definecolor{colTILES}{RGB}{230, 126, 34}
+\definecolor{colCLIP}{RGB}{231, 76, 60}
+\definecolor{colCLAMP}{RGB}{39, 174, 96}
+\definecolor{colGRAY}{RGB}{127, 140, 141}
+\definecolor{colMED}{RGB}{142, 68, 173}
+
+\newtcolorbox{analogy}[1][]{
+    colback=yellow!10,
+    colframe=yellow!60!orange,
+    boxrule=1pt,
+    arc=3pt,
+    title=\textbf{Analogía},
+    #1
+}
+
+\newtcolorbox{codebox}[1][]{
+    colback=gray!10,
+    colframe=gray!50,
+    boxrule=0.5pt,
+    arc=2pt,
+    fontupper=\ttfamily\small,
+    #1
+}
+
+\newtcolorbox{keybox}[2][]{
+    colback=#2!8,
+    colframe=#2!80,
+    boxrule=1.2pt,
+    arc=4pt,
+    title={\Large\textbf{#1}},
+    coltitle=white,
+    colbacktitle=#2,
+    breakable,
+    fonttitle=\sffamily
+}
+
+% ---------- Código ----------
+\usepackage{listings}
+\lstdefinestyle{matlab}{
+    language=Matlab,
+    backgroundcolor=\color{gray!8},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue!70!black}\bfseries,
+    commentstyle=\color{green!50!black}\itshape,
+    stringstyle=\color{red!60!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    rulecolor=\color{black!30},
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=2,
+    captionpos=b
+}
+\lstset{style=matlab}
+
+% ---------- Enlaces ----------
+\usepackage[colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black]{hyperref}
+
+% ---------- Metadatos ----------
+\title{
+    \vspace{-1.5cm}
+    \textbf{Conceptos Clave de Procesamiento de Imágenes} \\[0.3cm]
+    \Large Glosario visual: CLAHE, LAB, Tiles, Clip Limit y Clamping
+}
+\author{Jamin Yauri Cajas}
+\date{\today}
+
+% ============================================================
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Documento de apoyo al informe principal del proyecto de Visión por Computadora.
+Explica, con analogías simples, ejemplos visuales y fórmulas, los cinco conceptos
+técnicos más importantes detrás del pipeline de preprocesamiento: el espacio de
+color \textbf{Lab}, la ecualización adaptativa con restricción de contraste
+\textbf{CLAHE}, la idea de \textbf{tiles} o baldosas, el mecanismo de
+\textbf{clip limit} y la operación de \textbf{clamping}. Se incluyen además los
+conceptos complementarios del \textbf{filtro de mediana} y el \textbf{balance de
+blancos gray-world}.
+\end{abstract}
+
+\tableofcontents
+\vspace{1cm}
+
+% ============================================================
+\section{Motivación}
+
+Un pipeline de preprocesamiento, por más corto que sea, combina varios operadores
+de procesamiento de imágenes con funciones distintas. Entender los nombres técnicos
+que aparecen en el código (\texttt{rgb2lab}, \texttt{adapthisteq},
+\texttt{ClipLimit}, \texttt{NumTiles}, \texttt{medfilt2}, \texttt{max/min} como
+clamping) permite justificar cada decisión del pipeline y responder con solvencia
+a las preguntas del enunciado. Este documento presenta esos conceptos uno por
+uno, con la misma profundidad que se usaría en una clase del curso.
+
+% ============================================================
+\section{Espacio de color \textcolor{colLAB}{Lab}}
+\begin{keybox}[LAB — Separar brillo del color]{colLAB}
+
+\subsection*{¿Qué es?}
+
+Una forma distinta de representar colores donde el \textbf{brillo} y el
+\textbf{color puro} se guardan en canales separados.
+
+\subsection*{Comparación con RGB}
+
+\textbf{RGB} almacena tres intensidades —Rojo, Verde, Azul— que se suman para
+formar el color final. Cualquier operación que cambia solo una intensidad
+(subir el rojo) también altera el brillo y la saturación simultáneamente. No
+hay forma de decir \emph{``solo quiero oscurecer este píxel sin tocar su tono''}.
+
+\textbf{Lab} separa explícitamente:
+\begin{itemize}
+    \item \(L\) (\emph{Lightness}) — canal de brillo: \(0\) es negro puro, \(100\) es blanco puro.
+    \item \(a\) — eje cromático verde \(\leftrightarrow\) rojo.
+    \item \(b\) — eje cromático azul \(\leftrightarrow\) amarillo.
+\end{itemize}
+
+La transformación de RGB a Lab no es lineal: pasa por un espacio intermedio
+(XYZ de la CIE) y aplica funciones de cube-root diseñadas para imitar la
+respuesta no lineal del ojo humano a la luz.
+
+\begin{analogy}
+Piensa en los controles \emph{Brillo} y \emph{Tono} de un televisor. En RGB es
+imposible tocar uno sin tocar el otro; en Lab son perillas independientes.
+Cambiar \(L\) es como mover solo la perilla de brillo.
+\end{analogy}
+
+\subsection*{¿Por qué se usa en nuestro pipeline?}
+
+Para aplicar CLAHE solo sobre el brillo (canal \(L\)) sin modificar el tono
+(canales \(a, b\)). Si aplicáramos CLAHE en RGB píxel a píxel, cada canal se
+redistribuiría de forma desigual, desplazando el color percibido y generando
+\emph{aberraciones cromáticas} (un rojo volviéndose anaranjado, por ejemplo).
+
+\subsection*{Uso en el código}
+
+\begin{codebox}
+lab = rgb2lab(img);       \% RGB $\to$ Lab \\
+L = lab(:,:,1) / 100;     \% solo el canal de brillo \\
+\% ... aquí se aplica CLAHE a L ... \\
+lab(:,:,1) = L * 100;     \% se vuelve a insertar \\
+img = lab2rgb(lab);       \% Lab $\to$ RGB
+\end{codebox}
+
+\subsection*{Alternativas}
+
+Otros espacios que también separan brillo de color son \textbf{HSV} (Hue,
+Saturation, Value) y \textbf{YCbCr}. Se prefiere Lab porque es
+\emph{perceptualmente uniforme}: distancias iguales en el espacio Lab
+corresponden a diferencias iguales percibidas por el ojo, lo que no ocurre en
+HSV o YCbCr.
+
+\end{keybox}
+
+% ============================================================
+\section{\textcolor{colCLAHE}{CLAHE} — Ecualización Adaptativa con Límite de Contraste}
+\begin{keybox}[CLAHE — Mejorar contraste zona por zona]{colCLAHE}
+
+\subsection*{¿Qué es?}
+
+Un algoritmo para aumentar el contraste local de una imagen, adaptándose a
+las condiciones de cada región \textbf{independientemente} del resto.
+
+\subsection*{El problema que resuelve}
+
+La \textbf{ecualización de histograma clásica} busca que todos los tonos de
+gris aparezcan con la misma frecuencia. Tiene dos problemas graves:
+
+\begin{enumerate}
+    \item \textbf{No es adaptativa.} Aplica una única transformación a toda
+          la imagen. Si una zona está en sombra y otra bien iluminada, la
+          transformación no puede beneficiar a ambas a la vez.
+    \item \textbf{Amplifica ruido.} En zonas planas (cielo, pared blanca), el
+          histograma es muy estrecho; al ``estirarlo'' se magnifican las
+          micro-variaciones del sensor.
+\end{enumerate}
+
+CLAHE resuelve ambos:
+\begin{itemize}
+    \item \textbf{Adaptive}: divide la imagen en bloques y ecualiza cada uno
+          por separado, ajustándose al histograma local.
+    \item \textbf{Contrast Limited}: recorta los picos del histograma antes de
+          ecualizar, evitando amplificar ruido.
+\end{itemize}
+
+\begin{analogy}
+Una foto con una zona oscura en sombra y otra quemada por el sol es como un
+auditorio donde una mitad está a oscuras y la otra con los focos encendidos.
+Subir el brillo general no ayuda a nadie. CLAHE es como ponerle un dimmer
+independiente a cada fila de butacas: cada una recibe exactamente la luz
+que necesita.
+\end{analogy}
+
+\subsection*{Algoritmo paso a paso}
+
+\begin{enumerate}
+    \item Dividir la imagen en una grilla de tiles (típicamente \(8\times 8\)).
+    \item Para cada tile, calcular su histograma \(h_T(k)\).
+    \item Aplicar el \emph{clip limit} \(\beta\) al histograma: los bins que
+          superan el umbral se recortan, y el excedente se redistribuye uniformemente.
+    \item Calcular la CDF (función de distribución acumulada) del histograma
+          recortado; esa es la función de mapeo que ecualiza el tile.
+    \item Aplicar la transformación \textbf{interpolando bilinealmente} entre
+          tiles vecinos para que no se note la cuadrícula.
+\end{enumerate}
+
+\subsection*{Uso en el código}
+
+\begin{codebox}
+L = adapthisteq(L, ... \\
+\quad 'ClipLimit',    0.005, ... \\
+\quad 'NumTiles',     [8 8], ... \\
+\quad 'Distribution', 'uniform');
+\end{codebox}
+
+\end{keybox}
+
+% ============================================================
+\section{\textcolor{colTILES}{Tiles} — Baldosas para procesamiento local}
+\begin{keybox}[TILES — Dividir para conquistar]{colTILES}
+
+\subsection*{¿Qué son?}
+
+Los \textbf{tiles} (``baldosas'' o ``mosaicos'' en español) son las regiones
+rectangulares en las que CLAHE divide la imagen para procesarla por partes.
+La grilla típica es de \(8 \times 8 = 64\) tiles.
+
+\subsection*{Representación visual}
+
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|c|c|}
+\hline
+T$_{1,1}$ & T$_{1,2}$ & T$_{1,3}$ & T$_{1,4}$ & T$_{1,5}$ & T$_{1,6}$ & T$_{1,7}$ & T$_{1,8}$ \\
+\hline
+T$_{2,1}$ & T$_{2,2}$ & T$_{2,3}$ & T$_{2,4}$ & T$_{2,5}$ & T$_{2,6}$ & T$_{2,7}$ & T$_{2,8}$ \\
+\hline
+\multicolumn{8}{|c|}{$\cdots$ hasta completar 8 filas $\cdots$} \\
+\hline
+T$_{8,1}$ & T$_{8,2}$ & T$_{8,3}$ & T$_{8,4}$ & T$_{8,5}$ & T$_{8,6}$ & T$_{8,7}$ & T$_{8,8}$ \\
+\hline
+\end{tabular}
+\end{center}
+
+Cada tile tiene su propio histograma y su propia función de ecualización.
+
+\subsection*{¿Por qué 8×8?}
+
+Es un compromiso:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+Tamaño de grilla & Tile grande/pequeño & Problema \\
+\midrule
+\(2 \times 2\)   & Muy grandes & Se comporta como ecualización global \\
+\(8 \times 8\)   & \textbf{Equilibrado} & \textbf{Estándar de la literatura} \\
+\(32 \times 32\) & Muy pequeños & Histograma no representativo (ruido) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{El truco de la interpolación bilineal}
+
+Si se aplicara cada transformación solo a su tile, se verían bordes visibles
+entre tiles vecinos (\emph{blocking artifacts}). CLAHE interpola
+bilinealmente: cada píxel recibe un promedio ponderado de las transformaciones
+de los cuatro tiles más cercanos, en función de su distancia a los centros de
+cada uno. El resultado es una transición continua.
+
+\end{keybox}
+
+% ============================================================
+\section{\textcolor{colCLIP}{Clip Limit} — Controlar la amplificación de ruido}
+\begin{keybox}[CLIP LIMIT — El freno anti-ruido]{colCLIP}
+
+\subsection*{¿Qué es?}
+
+El \textbf{clip limit} es el tope máximo que puede tener cualquier bin del
+histograma dentro de un tile antes de ser recortado. Controla cuán agresiva
+puede ser la ecualización.
+
+\subsection*{Por qué existe}
+
+Sin clip limit, CLAHE amplificaría ferozmente las zonas planas. Supongamos
+que un tile representa la madera del escritorio, casi uniforme: su histograma
+tendría un pico altísimo en un solo tono y nada en el resto. Ecualizar eso
+significa ``estirar'' ese pico sobre todo el rango, lo que magnifica las
+micro-variaciones del sensor (ruido) y las hace visibles.
+
+\begin{analogy}
+Imagina un escáner médico subido al máximo. Revela tejidos finísimos, pero
+también amplifica el ruido eléctrico: aparecen granos falsos. El clip limit
+es el nivel de ganancia máxima antes de que empiecen a aparecer granos.
+\end{analogy}
+
+\subsection*{Representación visual del clipping}
+
+\begin{verbatim}
+    Histograma original       Histograma clipeado al umbral beta·N
+
+         |                          |
+         |  #                       |
+         |  #                       |  ===== <- umbral beta*N
+         |  #                       |  # # #
+         |  #                       |  # # #
+         |  # #                     |  # # #
+         |  # # #                   |  # # # #
+         |  # # # #                 |  # # # # #
+         +----------------+         +----------------+
+         0  valor 1  ... 255        0  valor 1  ... 255
+\end{verbatim}
+
+El ``excedente'' (la parte por encima del umbral) no se descarta: se
+redistribuye uniformemente entre todos los bins para conservar la masa total
+del histograma.
+
+\subsection*{Fórmula}
+
+Para un tile \(T\) con \(N\) píxeles totales y límite relativo \(\beta\):
+\begin{equation}
+    h_{\text{clip}}(k) = \min\!\bigl(h_T(k),\; \beta N\bigr)
+\end{equation}
+El excedente \(\sum_k \bigl[h_T(k) - h_{\text{clip}}(k)\bigr]\) se suma
+equitativamente a todos los bins.
+
+\subsection*{Valor usado en el código}
+
+En nuestro pipeline se usa \(\beta = 0{,}005\) (0.5\% de los píxeles por bin).
+Es un valor \textbf{conservador}: da realce sin introducir ruido visible.
+Valores mayores (\(0{,}02\) o más) producen imágenes muy contrastadas pero
+ruidosas.
+
+\end{keybox}
+
+% ============================================================
+\section{\textcolor{colCLAMP}{Clamping} — Cortar al rango válido}
+\begin{keybox}[CLAMPING — Mantener los píxeles en rango]{colCLAMP}
+
+\subsection*{¿Qué es?}
+
+Una operación que fuerza a cada valor a quedarse dentro de un rango permitido.
+Cualquier valor por debajo del mínimo se pega al mínimo, y cualquier valor
+por encima del máximo se pega al máximo.
+
+\subsection*{Fórmula}
+
+\begin{equation}
+    \text{clamp}(x; a, b) =
+    \begin{cases}
+        a & \text{si } x < a, \\
+        x & \text{si } a \le x \le b, \\
+        b & \text{si } x > b.
+    \end{cases}
+\end{equation}
+
+En forma compacta usando \(\min\) y \(\max\):
+\begin{equation}
+    \text{clamp}(x; a, b) = \max\!\bigl(a,\; \min(b, x)\bigr).
+\end{equation}
+
+En nuestro pipeline \(a = 0\) y \(b = 1\) (imágenes en \texttt{double}).
+
+\begin{analogy}
+El control de volumen del celular: va de 0 a 100. Presionar ``subir'' cuando
+ya estás en 100 no pasa a 101 — se queda en 100. Presionar ``bajar'' cuando
+estás en 0 no pasa a \(-1\) — se queda en 0.
+\end{analogy}
+
+\subsection*{¿Por qué hace falta?}
+
+La conversión \(\text{Lab} \to \text{RGB}\) tras CLAHE puede producir valores
+ligeramente fuera del rango \([0, 1]\) debido a:
+\begin{itemize}
+    \item Errores de redondeo en aritmética de punto flotante.
+    \item Puntos del espacio Lab que están fuera del gamut visible de RGB (colores
+          que existen en Lab pero no pueden representarse en RGB).
+\end{itemize}
+
+Si no se clampa, al guardar la imagen como \texttt{uint8} MATLAB aplica
+truncamiento o wrap-around, lo que produce ``píxeles chillones'' (rojo puro
+donde debería haber blanco, por ejemplo). Clamping evita ese artefacto.
+
+\subsection*{Uso en el código}
+
+\begin{codebox}
+img = max(0, min(1, img));
+\end{codebox}
+
+\end{keybox}
+
+% ============================================================
+\section{\textcolor{colMED}{Filtro de mediana} — Denoise que respeta bordes}
+\begin{keybox}[MEDIANA — Filtro no lineal anti-impulso]{colMED}
+
+\subsection*{¿Qué hace?}
+
+Reemplaza cada píxel por la \textbf{mediana} (valor central ordenado) de los
+píxeles de su vecindad.
+
+\subsection*{Mediana vs. promedio}
+
+Sea la vecindad \(\{10, 12, 11, 255, 10, 13, 11, 12, 10\}\) (ruido sal):
+\begin{itemize}
+    \item \textbf{Promedio} = \(\frac{10+12+11+255+10+13+11+12+10}{9} \approx 38\) — contaminado por el outlier.
+    \item \textbf{Mediana} = \(11\) — el outlier se descarta.
+\end{itemize}
+
+\subsection*{Propiedades}
+
+\begin{enumerate}
+    \item \textbf{No lineal}: no se puede expresar como convolución con un kernel.
+    \item \textbf{Robusto a outliers}: píxeles aislados extremos no afectan la salida.
+    \item \textbf{Preserva bordes} mejor que un filtro promedio, porque no introduce valores intermedios inventados.
+    \item \textbf{Ideal contra ruido impulsivo} (sal y pimienta); poco efectivo contra ruido gaussiano — por eso se complementa con filtro gaussiano.
+\end{enumerate}
+
+\subsection*{Uso en el código}
+
+\begin{codebox}
+img(:,:,c) = medfilt2(img(:,:,c), [3 3]);
+\end{codebox}
+
+\end{keybox}
+
+% ============================================================
+\section{\textcolor{colGRAY}{Gray-world} — Balance de blancos automático}
+\begin{keybox}[GRAY-WORLD — Corregir el tinte de iluminación]{colGRAY}
+
+\subsection*{La hipótesis}
+
+En una escena natural típica, la suma de todos los colores presentes se
+aproxima a gris neutro. Si en una foto el promedio del canal rojo es
+significativamente mayor que el del verde o azul, es porque la
+\textbf{iluminación} tiene un tinte cálido (bombilla incandescente), no
+porque la escena sea ``roja''.
+
+\subsection*{La corrección}
+
+Se calcula la media de cada canal y una media global, y se escala cada canal
+para que su media iguale la global:
+\begin{equation}
+    \bar{c} = \frac{1}{HW}\sum_{x,y} I(x,y,c), \qquad
+    \bar{m} = \frac{\bar{R} + \bar{G} + \bar{B}}{3},
+\end{equation}
+\begin{equation}
+    I'(x,y,c) = I(x,y,c) \cdot \frac{\bar{m}}{\bar{c}}.
+\end{equation}
+
+\subsection*{Ventajas y limitaciones}
+
+\textbf{Ventajas:}
+\begin{itemize}
+    \item No tiene parámetros; se auto-calibra a partir de cada imagen.
+    \item Muy rápido.
+    \item Funciona bien en escenas con variedad cromática.
+\end{itemize}
+
+\textbf{Limitaciones:}
+\begin{itemize}
+    \item Falla si la escena está dominada por un color (p.\,ej., solo
+          marcadores rojos): creería que la iluminación es cálida y
+          oscurecería el rojo.
+    \item Alternativas más robustas: \emph{Shades of Gray}, \emph{max-RGB},
+          \emph{Gray-Edge}, todas también automáticas.
+\end{itemize}
+
+\end{keybox}
+
+% ============================================================
+\section{Resumen integrado}
+
+La Tabla~\ref{tab:resumen} condensa la función, el tipo y el valor usado de
+cada concepto revisado.
+
+\begin{table}[H]
+\centering
+\caption{Resumen de los conceptos clave.}
+\label{tab:resumen}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Concepto & Tipo & Función & Valor/Parámetro \\
+\midrule
+Lab                 & Espacio de color      & Separa brillo de color       & --- \\
+Mediana             & Filtro no lineal      & Elimina outliers             & kernel \([3,3]\) \\
+Gaussiano           & Filtro lineal         & Suaviza ruido residual       & \(\sigma = 0{,}8\) \\
+Gray-world          & Algoritmo de WB       & Corrige tinte de iluminación & sin parámetros \\
+CLAHE               & Realce de contraste   & Ecualiza localmente          & ver abajo \\
+Tiles               & Parámetro de CLAHE    & Grilla de división           & \(8\times 8\) \\
+Clip limit          & Parámetro de CLAHE    & Controla amplificación ruido & \(\beta = 0{,}005\) \\
+Clamping            & Operación aritmética  & Fuerza rango \([0,1]\)       & \(\max(0, \min(1, x))\) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+\section{Conclusión}
+
+Los cinco conceptos principales — \textbf{Lab}, \textbf{CLAHE}, \textbf{tiles},
+\textbf{clip limit} y \textbf{clamping} — no son términos aislados sino piezas
+de un mismo razonamiento: se quiere mejorar el contraste de la imagen \emph{sin
+alterar su color} (de ahí Lab), \emph{adaptándose a cada región} (de ahí los
+tiles que alimentan CLAHE), \emph{sin amplificar el ruido de fondo} (de ahí el
+clip limit), \emph{y garantizando que el resultado sea una imagen válida} (de
+ahí el clamping final). Los dos conceptos complementarios —
+\textbf{filtro de mediana} y \textbf{gray-world} — completan el pipeline
+atacando los dos defectos restantes: ruido impulsivo y dominante cromática
+de iluminación. El conjunto forma un algoritmo automático, adaptativo y
+justificable etapa por etapa.
+
+\end{document}

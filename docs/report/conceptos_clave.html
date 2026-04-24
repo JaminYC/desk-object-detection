@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conceptos Clave — Procesamiento de Imágenes</title>
+
+<!-- MathJax para fórmulas -->
+<script>
+MathJax = {
+    tex: { inlineMath: [['$','$'], ['\\(','\\)']] },
+    svg: { fontCache: 'global' }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg:        #0f1419;
+    --surface:   #1a2028;
+    --surface2:  #242c38;
+    --text:      #e6edf3;
+    --text-dim:  #9ba4b3;
+    --border:    #2d3643;
+
+    --lab:    #9b59b6;
+    --clahe:  #3498db;
+    --tiles:  #e67e22;
+    --clip:   #e74c3c;
+    --clamp:  #27ae60;
+    --median: #8e44ad;
+    --gray:   #95a5a6;
+    --gauss:  #16a085;
+
+    --mono: 'SF Mono', 'Monaco', 'Cascadia Code', 'Consolas', monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.7;
+    padding: 2rem 1rem;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+/* --------------- Header --------------- */
+header {
+    text-align: center;
+    padding: 2rem 0 3rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 3rem;
+}
+header h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, var(--clahe), var(--lab), var(--tiles));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0.8rem;
+}
+header .sub { color: var(--text-dim); font-size: 1.1rem; }
+header .meta { color: var(--text-dim); font-size: 0.9rem; margin-top: 0.8rem; }
+
+/* --------------- TOC --------------- */
+.toc {
+    background: var(--surface);
+    border-left: 4px solid var(--clahe);
+    padding: 1.5rem 2rem;
+    margin: 2rem 0 3rem;
+    border-radius: 8px;
+}
+.toc h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px;}
+.toc ol { padding-left: 1.5rem; }
+.toc li { margin: 0.4rem 0; }
+.toc a { color: var(--text); text-decoration: none; transition: 0.2s; }
+.toc a:hover { color: var(--clahe); padding-left: 5px; }
+
+/* --------------- Concept cards --------------- */
+.concept {
+    background: var(--surface);
+    border-radius: 12px;
+    margin: 2rem 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+.concept-header {
+    padding: 1.5rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    color: white;
+    font-weight: 700;
+    font-size: 1.6rem;
+}
+.concept-header .number {
+    background: rgba(255,255,255,0.2);
+    border-radius: 50%;
+    width: 45px;
+    height: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+}
+.concept-header .tagline {
+    margin-left: auto;
+    font-size: 0.9rem;
+    font-weight: 400;
+    opacity: 0.9;
+}
+.concept-body { padding: 2rem; }
+
+/* Color variants */
+.lab    .concept-header { background: var(--lab); }
+.clahe  .concept-header { background: var(--clahe); }
+.tiles  .concept-header { background: var(--tiles); }
+.clip   .concept-header { background: var(--clip); }
+.clamp  .concept-header { background: var(--clamp); }
+.median .concept-header { background: var(--median); }
+.gray   .concept-header { background: var(--gray); }
+
+/* --------------- Generic elements --------------- */
+h3 {
+    font-size: 1.25rem;
+    margin: 1.5rem 0 0.8rem;
+    color: var(--text);
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+}
+p { margin: 0.8rem 0; }
+ul, ol { margin: 0.8rem 0 0.8rem 1.5rem; }
+li { margin: 0.4rem 0; }
+strong { color: #ffd966; }
+
+code {
+    font-family: var(--mono);
+    background: var(--surface2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.92em;
+    color: #f5b7b1;
+}
+
+pre {
+    background: #0d1117;
+    padding: 1.2rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    margin: 1rem 0;
+}
+pre code {
+    background: transparent;
+    padding: 0;
+    color: var(--text);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+/* Analogy box */
+.analogy {
+    background: linear-gradient(135deg, #2c1810 0%, #3d2817 100%);
+    border-left: 4px solid #f39c12;
+    padding: 1.2rem 1.5rem;
+    border-radius: 6px;
+    margin: 1.2rem 0;
+}
+.analogy::before {
+    content: "💡 Analogía";
+    display: block;
+    color: #f39c12;
+    font-weight: 700;
+    margin-bottom: 0.6rem;
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+}
+
+/* Highlight box */
+.highlight {
+    background: var(--surface2);
+    padding: 1rem 1.4rem;
+    border-radius: 6px;
+    margin: 1rem 0;
+    border-left: 4px solid var(--clahe);
+}
+
+/* --------------- Tables --------------- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background: var(--surface2);
+    border-radius: 8px;
+    overflow: hidden;
+}
+th, td {
+    padding: 0.7rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+th {
+    background: var(--bg);
+    color: var(--clahe);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover { background: rgba(52, 152, 219, 0.05); }
+
+/* --------------- SVG figures --------------- */
+.figure {
+    background: var(--surface2);
+    padding: 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+    margin: 1.5rem 0;
+    border: 1px solid var(--border);
+}
+.figure svg { max-width: 100%; height: auto; }
+.figure .caption {
+    margin-top: 0.8rem;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+/* --------------- Final summary --------------- */
+.summary {
+    background: linear-gradient(135deg, #1e3c4a 0%, #2c1e4a 100%);
+    padding: 2rem;
+    border-radius: 12px;
+    margin: 3rem 0;
+    border: 1px solid var(--border);
+}
+.summary h2 {
+    color: #4fc3f7;
+    margin-bottom: 1rem;
+}
+
+/* --------------- Grid cards for final visual --------------- */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+}
+.mini-card {
+    background: var(--surface);
+    padding: 1.2rem;
+    border-radius: 8px;
+    border-top: 4px solid var(--clahe);
+}
+.mini-card h4 { font-size: 1rem; margin-bottom: 0.4rem; color: white; }
+.mini-card p { font-size: 0.9rem; color: var(--text-dim); margin: 0; }
+
+footer {
+    text-align: center;
+    padding: 3rem 0 1rem;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    border-top: 1px solid var(--border);
+    margin-top: 4rem;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- ============ HEADER ============ -->
+<header>
+    <h1>Conceptos Clave de Procesamiento de Imágenes</h1>
+    <div class="sub">Glosario visual: CLAHE · LAB · Tiles · Clip Limit · Clamping · Mediana · Gray-world</div>
+    <div class="meta">Jamin Yauri Cajas — Proyecto 1MTR27 Visión por Computadora</div>
+</header>
+
+<!-- ============ TOC ============ -->
+<nav class="toc">
+    <h2>Contenidos</h2>
+    <ol>
+        <li><a href="#lab">Espacio de color Lab</a></li>
+        <li><a href="#clahe">CLAHE — Ecualización adaptativa</a></li>
+        <li><a href="#tiles">Tiles — Baldosas para procesamiento local</a></li>
+        <li><a href="#clip">Clip Limit — Freno anti-ruido</a></li>
+        <li><a href="#clamp">Clamping — Cortar al rango válido</a></li>
+        <li><a href="#median">Filtro de mediana</a></li>
+        <li><a href="#gray">Gray-world — Balance de blancos</a></li>
+        <li><a href="#summary">Resumen integrado</a></li>
+    </ol>
+</nav>
+
+<!-- ============ 1. LAB ============ -->
+<section id="lab" class="concept lab">
+    <div class="concept-header">
+        <div class="number">1</div>
+        <span>LAB</span>
+        <span class="tagline">Separar brillo del color</span>
+    </div>
+    <div class="concept-body">
+
+<h3>¿Qué es?</h3>
+<p>Una forma distinta de representar colores donde el <strong>brillo</strong> y el <strong>color puro</strong> se guardan en canales separados.</p>
+
+<h3>RGB vs. Lab — representación visual</h3>
+
+<div class="figure">
+<svg viewBox="0 0 800 300" xmlns="http://www.w3.org/2000/svg">
+    <!-- RGB cube -->
+    <text x="120" y="30" fill="#e6edf3" font-size="18" font-weight="700" text-anchor="middle">Modelo RGB</text>
+
+    <!-- RGB 3 axes with colors mixed -->
+    <line x1="120" y1="200" x2="120" y2="80"  stroke="#e74c3c" stroke-width="4"/>
+    <line x1="120" y1="200" x2="240" y2="200" stroke="#27ae60" stroke-width="4"/>
+    <line x1="120" y1="200" x2="60"  y2="260" stroke="#3498db" stroke-width="4"/>
+    <text x="125" y="75"  fill="#e74c3c" font-size="14" font-weight="700">R (rojo)</text>
+    <text x="250" y="200" fill="#27ae60" font-size="14" font-weight="700">G (verde)</text>
+    <text x="30"  y="275" fill="#3498db" font-size="14" font-weight="700">B (azul)</text>
+
+    <text x="120" y="230" fill="#9ba4b3" font-size="11" text-anchor="middle">cambiar uno = cambiar brillo + color</text>
+
+    <!-- Arrow -->
+    <line x1="320" y1="150" x2="440" y2="150" stroke="#e6edf3" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="380" y="140" fill="#e6edf3" font-size="14" text-anchor="middle" font-weight="700">rgb2lab</text>
+
+    <!-- Lab axes -->
+    <text x="640" y="30" fill="#e6edf3" font-size="18" font-weight="700" text-anchor="middle">Modelo Lab</text>
+
+    <!-- L axis -->
+    <line x1="500" y1="240" x2="500" y2="80" stroke="#ecf0f1" stroke-width="4"/>
+    <text x="510" y="75" fill="#ecf0f1" font-size="13" font-weight="700">L = 100 (blanco)</text>
+    <text x="510" y="250" fill="#2c3e50" font-size="13" font-weight="700">L = 0 (negro)</text>
+
+    <!-- a axis green-red -->
+    <line x1="560" y1="160" x2="780" y2="160" stroke="url(#ga)" stroke-width="4"/>
+    <text x="560" y="150" fill="#27ae60" font-size="12">-a (verde)</text>
+    <text x="720" y="150" fill="#e74c3c" font-size="12">+a (rojo)</text>
+
+    <!-- b axis blue-yellow -->
+    <line x1="670" y1="100" x2="670" y2="240" stroke="url(#gb)" stroke-width="4"/>
+    <text x="680" y="100" fill="#f1c40f" font-size="12">+b (amar.)</text>
+    <text x="680" y="250" fill="#3498db" font-size="12">-b (azul)</text>
+
+    <text x="640" y="280" fill="#9ba4b3" font-size="11" text-anchor="middle">L = brillo puro · a, b = color puro</text>
+
+    <defs>
+        <linearGradient id="ga" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#27ae60"/>
+            <stop offset="50%" stop-color="#7f8c8d"/>
+            <stop offset="100%" stop-color="#e74c3c"/>
+        </linearGradient>
+        <linearGradient id="gb" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#f1c40f"/>
+            <stop offset="50%" stop-color="#7f8c8d"/>
+            <stop offset="100%" stop-color="#3498db"/>
+        </linearGradient>
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+            <polygon points="0 0, 10 5, 0 10" fill="#e6edf3"/>
+        </marker>
+    </defs>
+</svg>
+<div class="caption">Los tres canales RGB mezclan brillo y color. Los tres canales Lab los separan: $L$ es solo brillo, $a$ y $b$ son solo color.</div>
+</div>
+
+<div class="analogy">
+Piensa en los controles <em>Brillo</em> y <em>Tono</em> de un televisor. En RGB es imposible tocar uno sin tocar el otro; en Lab son perillas independientes. Cambiar $L$ es como mover solo la perilla de brillo.
+</div>
+
+<h3>¿Por qué se usa en el pipeline?</h3>
+<p>Para aplicar CLAHE solo sobre el brillo (canal $L$) sin modificar el tono ($a$, $b$). Si aplicáramos CLAHE en RGB píxel a píxel, cada canal se redistribuiría de forma desigual, desplazando el color percibido y generando <strong>aberraciones cromáticas</strong> (un rojo volviéndose anaranjado, por ejemplo).</p>
+
+<h3>Uso en el código</h3>
+<pre><code>lab = rgb2lab(img);       % RGB → Lab
+L   = lab(:,:,1) / 100;   % solo el canal de brillo (0 a 100)
+% ... aquí se aplica CLAHE a L ...
+lab(:,:,1) = L * 100;     % se vuelve a insertar
+img = lab2rgb(lab);       % Lab → RGB</code></pre>
+
+<h3>Alternativas</h3>
+<p>Otros espacios que también separan brillo de color: <strong>HSV</strong> y <strong>YCbCr</strong>. Se prefiere Lab porque es <em>perceptualmente uniforme</em>: distancias iguales en Lab corresponden a diferencias iguales percibidas por el ojo.</p>
+
+    </div>
+</section>
+
+<!-- ============ 2. CLAHE ============ -->
+<section id="clahe" class="concept clahe">
+    <div class="concept-header">
+        <div class="number">2</div>
+        <span>CLAHE</span>
+        <span class="tagline">Contrast Limited Adaptive Histogram Equalization</span>
+    </div>
+    <div class="concept-body">
+
+<h3>¿Qué es?</h3>
+<p>Un algoritmo para aumentar el contraste local de una imagen, <strong>adaptándose a las condiciones de cada región</strong> independientemente del resto.</p>
+
+<h3>El problema que resuelve — ecualización clásica vs CLAHE</h3>
+
+<div class="figure">
+<svg viewBox="0 0 800 260" xmlns="http://www.w3.org/2000/svg">
+    <!-- Original image with dark/light zones -->
+    <text x="130" y="30" fill="#e6edf3" font-size="14" font-weight="700" text-anchor="middle">Imagen original</text>
+    <rect x="40" y="50" width="180" height="120" fill="#1a1a1a"/>
+    <rect x="130" y="50" width="90" height="120" fill="#c8c8c8"/>
+    <text x="85" y="115" fill="#e6edf3" font-size="11" text-anchor="middle">sombra</text>
+    <text x="175" y="115" fill="#2c3e50" font-size="11" text-anchor="middle">luz</text>
+
+    <!-- Global equalization -->
+    <text x="400" y="30" fill="#e74c3c" font-size="14" font-weight="700" text-anchor="middle">Ecualización global</text>
+    <rect x="310" y="50" width="180" height="120" fill="#505050"/>
+    <rect x="400" y="50" width="90" height="120" fill="#ffffff"/>
+    <text x="355" y="115" fill="#e6edf3" font-size="11" text-anchor="middle">gris medio</text>
+    <text x="445" y="115" fill="#2c3e50" font-size="11" text-anchor="middle">quemado</text>
+    <text x="400" y="195" fill="#e74c3c" font-size="10" text-anchor="middle">✗ zona oscura aún oscura, zona clara quemada</text>
+
+    <!-- CLAHE -->
+    <text x="670" y="30" fill="#27ae60" font-size="14" font-weight="700" text-anchor="middle">CLAHE</text>
+    <rect x="580" y="50" width="180" height="120" fill="#707070"/>
+    <rect x="670" y="50" width="90" height="120" fill="#b0b0b0"/>
+    <text x="625" y="115" fill="#e6edf3" font-size="11" text-anchor="middle">detalles visibles</text>
+    <text x="715" y="115" fill="#2c3e50" font-size="11" text-anchor="middle">detalles visibles</text>
+    <text x="670" y="195" fill="#27ae60" font-size="10" text-anchor="middle">✓ cada zona recibe el ajuste que necesita</text>
+</svg>
+<div class="caption">La ecualización global falla con iluminación heterogénea; CLAHE trabaja zona por zona.</div>
+</div>
+
+<div class="analogy">
+Una foto con una zona en sombra y otra quemada por el sol es como un auditorio donde una mitad está a oscuras y la otra con los focos encendidos. Subir el brillo general no ayuda a nadie. CLAHE es como ponerle un dimmer independiente a cada fila de butacas: cada una recibe exactamente la luz que necesita.
+</div>
+
+<h3>Algoritmo paso a paso</h3>
+<ol>
+    <li>Dividir la imagen en una grilla de <strong>tiles</strong> ($8 \times 8$ típicamente).</li>
+    <li>Para cada tile, calcular su <strong>histograma</strong> $h_T(k)$.</li>
+    <li>Aplicar el <strong>clip limit</strong> $\beta$: los bins que superan el umbral se recortan y el excedente se redistribuye uniformemente.</li>
+    <li>Calcular la <strong>CDF</strong> del histograma recortado → función de mapeo de intensidades.</li>
+    <li>Aplicar la transformación con <strong>interpolación bilineal</strong> entre tiles vecinos para evitar artefactos de bloques.</li>
+</ol>
+
+<h3>Uso en el código</h3>
+<pre><code>L = adapthisteq(L, ...
+    'ClipLimit',    0.005, ...
+    'NumTiles',     [8 8], ...
+    'Distribution', 'uniform');</code></pre>
+
+    </div>
+</section>
+
+<!-- ============ 3. TILES ============ -->
+<section id="tiles" class="concept tiles">
+    <div class="concept-header">
+        <div class="number">3</div>
+        <span>TILES</span>
+        <span class="tagline">Divide y vencerás</span>
+    </div>
+    <div class="concept-body">
+
+<h3>¿Qué son?</h3>
+<p>Los <strong>tiles</strong> (baldosas o mosaicos) son las regiones rectangulares en las que CLAHE divide la imagen para procesarla por partes. La grilla típica es de $8 \times 8 = 64$ tiles.</p>
+
+<h3>Visualización</h3>
+
+<div class="figure">
+<svg viewBox="0 0 700 340" xmlns="http://www.w3.org/2000/svg">
+    <!-- Image with grid -->
+    <rect x="50" y="20" width="320" height="240" fill="#2c3e50" stroke="#e67e22" stroke-width="2"/>
+
+    <!-- Grid 8x8 -->
+    <g stroke="#e67e22" stroke-width="1" opacity="0.7">
+    <!-- Vertical lines -->
+    <line x1="90"  y1="20" x2="90"  y2="260"/>
+    <line x1="130" y1="20" x2="130" y2="260"/>
+    <line x1="170" y1="20" x2="170" y2="260"/>
+    <line x1="210" y1="20" x2="210" y2="260"/>
+    <line x1="250" y1="20" x2="250" y2="260"/>
+    <line x1="290" y1="20" x2="290" y2="260"/>
+    <line x1="330" y1="20" x2="330" y2="260"/>
+    <!-- Horizontal lines -->
+    <line x1="50" y1="50"  x2="370" y2="50"/>
+    <line x1="50" y1="80"  x2="370" y2="80"/>
+    <line x1="50" y1="110" x2="370" y2="110"/>
+    <line x1="50" y1="140" x2="370" y2="140"/>
+    <line x1="50" y1="170" x2="370" y2="170"/>
+    <line x1="50" y1="200" x2="370" y2="200"/>
+    <line x1="50" y1="230" x2="370" y2="230"/>
+    </g>
+
+    <!-- Highlight one tile -->
+    <rect x="170" y="110" width="40" height="30" fill="#e67e22" opacity="0.4" stroke="#e67e22" stroke-width="2"/>
+    <text x="190" y="128" fill="white" font-size="10" text-anchor="middle" font-weight="700">T</text>
+
+    <text x="210" y="290" fill="#e67e22" font-size="14" text-anchor="middle" font-weight="700">Grilla 8 × 8 = 64 tiles</text>
+    <text x="210" y="310" fill="#9ba4b3" font-size="11" text-anchor="middle">cada tile tiene su propio histograma y ecualización</text>
+
+    <!-- Arrow -->
+    <line x1="400" y1="140" x2="470" y2="140" stroke="#e6edf3" stroke-width="2" marker-end="url(#a2)"/>
+    <text x="435" y="130" fill="#e6edf3" font-size="11" text-anchor="middle">zoom</text>
+
+    <!-- Single tile detail -->
+    <rect x="490" y="70" width="180" height="140" fill="#e67e22" opacity="0.2" stroke="#e67e22" stroke-width="2"/>
+
+    <!-- Tiny histogram inside -->
+    <text x="580" y="90" fill="#e67e22" font-size="11" text-anchor="middle" font-weight="700">Tile aislado</text>
+    <line x1="510" y1="195" x2="650" y2="195" stroke="#e6edf3" stroke-width="1"/>
+    <line x1="510" y1="195" x2="510" y2="110" stroke="#e6edf3" stroke-width="1"/>
+    <rect x="520" y="160" width="10" height="35" fill="#3498db"/>
+    <rect x="535" y="140" width="10" height="55" fill="#3498db"/>
+    <rect x="550" y="130" width="10" height="65" fill="#3498db"/>
+    <rect x="565" y="120" width="10" height="75" fill="#3498db"/>
+    <rect x="580" y="125" width="10" height="70" fill="#3498db"/>
+    <rect x="595" y="145" width="10" height="50" fill="#3498db"/>
+    <rect x="610" y="160" width="10" height="35" fill="#3498db"/>
+    <rect x="625" y="170" width="10" height="25" fill="#3498db"/>
+    <text x="580" y="225" fill="#9ba4b3" font-size="10" text-anchor="middle">histograma local</text>
+
+    <defs>
+        <marker id="a2" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+            <polygon points="0 0, 10 5, 0 10" fill="#e6edf3"/>
+        </marker>
+    </defs>
+</svg>
+<div class="caption">La imagen se divide en 64 tiles, y cada uno construye su propio histograma para ser ecualizado independientemente.</div>
+</div>
+
+<h3>¿Por qué 8×8?</h3>
+
+<table>
+    <thead>
+        <tr><th>Grilla</th><th>Tile</th><th>Problema</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>$2 \times 2$</td><td>Muy grande</td><td>Se comporta como ecualización global</td></tr>
+        <tr><td><strong>$8 \times 8$</strong></td><td><strong>Equilibrado</strong></td><td><strong>Estándar de la literatura</strong></td></tr>
+        <tr><td>$32 \times 32$</td><td>Muy pequeño</td><td>Histograma no representativo (ruido)</td></tr>
+    </tbody>
+</table>
+
+<h3>El truco de la interpolación bilineal</h3>
+<p>Si cada transformación se aplicara solo a su tile, se verían bordes visibles entre tiles vecinos (<em>blocking artifacts</em>). CLAHE interpola bilinealmente: cada píxel recibe un <strong>promedio ponderado</strong> de las transformaciones de los 4 tiles más cercanos, en función de su distancia a los centros. Resultado: transiciones continuas.</p>
+
+    </div>
+</section>
+
+<!-- ============ 4. CLIP LIMIT ============ -->
+<section id="clip" class="concept clip">
+    <div class="concept-header">
+        <div class="number">4</div>
+        <span>CLIP LIMIT</span>
+        <span class="tagline">El freno anti-ruido</span>
+    </div>
+    <div class="concept-body">
+
+<h3>¿Qué es?</h3>
+<p>El <strong>clip limit</strong> es el tope máximo que puede tener cualquier bin del histograma dentro de un tile antes de ser recortado. Controla cuán agresiva puede ser la ecualización.</p>
+
+<h3>Visualización del clipping</h3>
+
+<div class="figure">
+<svg viewBox="0 0 800 320" xmlns="http://www.w3.org/2000/svg">
+    <!-- Original histogram (tall peak) -->
+    <text x="170" y="30" fill="#e6edf3" font-size="14" text-anchor="middle" font-weight="700">Histograma original</text>
+    <text x="170" y="50" fill="#9ba4b3" font-size="11" text-anchor="middle">tile de zona plana (pared lisa)</text>
+
+    <line x1="60" y1="280" x2="320" y2="280" stroke="#e6edf3" stroke-width="1.5"/>
+    <line x1="60" y1="280" x2="60"  y2="80"  stroke="#e6edf3" stroke-width="1.5"/>
+    <text x="55" y="285" fill="#9ba4b3" font-size="10" text-anchor="end">0</text>
+    <text x="55" y="90" fill="#9ba4b3" font-size="10" text-anchor="end">N</text>
+    <text x="190" y="300" fill="#9ba4b3" font-size="10" text-anchor="middle">intensidad</text>
+
+    <rect x="80"  y="240" width="15" height="40"  fill="#3498db"/>
+    <rect x="100" y="220" width="15" height="60"  fill="#3498db"/>
+    <rect x="120" y="180" width="15" height="100" fill="#3498db"/>
+    <rect x="140" y="90"  width="15" height="190" fill="#3498db"/>
+    <rect x="160" y="110" width="15" height="170" fill="#3498db"/>
+    <rect x="180" y="200" width="15" height="80"  fill="#3498db"/>
+    <rect x="200" y="230" width="15" height="50"  fill="#3498db"/>
+    <rect x="220" y="250" width="15" height="30"  fill="#3498db"/>
+    <rect x="240" y="260" width="15" height="20"  fill="#3498db"/>
+    <rect x="260" y="265" width="15" height="15"  fill="#3498db"/>
+
+    <!-- Arrow -->
+    <line x1="350" y1="180" x2="440" y2="180" stroke="#e74c3c" stroke-width="3" marker-end="url(#a3)"/>
+    <text x="395" y="170" fill="#e74c3c" font-size="12" text-anchor="middle" font-weight="700">clip β·N</text>
+
+    <!-- Clipped histogram -->
+    <text x="600" y="30" fill="#e6edf3" font-size="14" text-anchor="middle" font-weight="700">Histograma clipeado</text>
+    <text x="600" y="50" fill="#9ba4b3" font-size="11" text-anchor="middle">excedente redistribuido</text>
+
+    <line x1="470" y1="280" x2="730" y2="280" stroke="#e6edf3" stroke-width="1.5"/>
+    <line x1="470" y1="280" x2="470" y2="80"  stroke="#e6edf3" stroke-width="1.5"/>
+
+    <!-- Clip line -->
+    <line x1="470" y1="150" x2="730" y2="150" stroke="#e74c3c" stroke-width="2" stroke-dasharray="4,4"/>
+    <text x="738" y="153" fill="#e74c3c" font-size="10">β·N</text>
+
+    <!-- Bars under clip limit and equally boosted -->
+    <rect x="490" y="200" width="15" height="80"  fill="#27ae60"/>
+    <rect x="510" y="185" width="15" height="95"  fill="#27ae60"/>
+    <rect x="530" y="155" width="15" height="125" fill="#27ae60"/>
+    <rect x="550" y="150" width="15" height="130" fill="#27ae60"/>
+    <rect x="570" y="150" width="15" height="130" fill="#27ae60"/>
+    <rect x="590" y="165" width="15" height="115" fill="#27ae60"/>
+    <rect x="610" y="185" width="15" height="95"  fill="#27ae60"/>
+    <rect x="630" y="200" width="15" height="80"  fill="#27ae60"/>
+    <rect x="650" y="208" width="15" height="72"  fill="#27ae60"/>
+    <rect x="670" y="213" width="15" height="67"  fill="#27ae60"/>
+
+    <defs>
+        <marker id="a3" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+            <polygon points="0 0, 10 5, 0 10" fill="#e74c3c"/>
+        </marker>
+    </defs>
+</svg>
+<div class="caption">Los picos del histograma se recortan al umbral $\beta N$ y el excedente se reparte equitativamente entre todos los bins.</div>
+</div>
+
+<div class="analogy">
+Imagina un escáner médico subido al máximo. Revela tejidos finísimos pero también amplifica el ruido eléctrico: aparecen granos falsos. El clip limit es el nivel de ganancia máxima antes de que empiecen a aparecer granos.
+</div>
+
+<h3>Fórmula</h3>
+<p>Para un tile $T$ con $N$ píxeles totales y límite relativo $\beta$:</p>
+<p style="text-align: center; font-size: 1.2em;">$$h_{\text{clip}}(k) = \min\bigl(h_T(k),\; \beta N\bigr)$$</p>
+<p>El excedente $\sum_k [h_T(k) - h_{\text{clip}}(k)]$ se suma equitativamente a todos los bins.</p>
+
+<h3>Valor usado en el código</h3>
+<p>$\beta = 0{,}005$ (0.5% de los píxeles por bin). Es un valor <strong>conservador</strong>: da realce sin introducir ruido visible. Valores mayores (0.02+) producen imágenes muy contrastadas pero ruidosas.</p>
+
+    </div>
+</section>
+
+<!-- ============ 5. CLAMPING ============ -->
+<section id="clamp" class="concept clamp">
+    <div class="concept-header">
+        <div class="number">5</div>
+        <span>CLAMPING</span>
+        <span class="tagline">Cortar al rango válido</span>
+    </div>
+    <div class="concept-body">
+
+<h3>¿Qué es?</h3>
+<p>Una operación que fuerza cada valor a quedarse dentro de un rango permitido. Cualquier valor por debajo del mínimo se pega al mínimo; cualquier valor por encima del máximo se pega al máximo.</p>
+
+<h3>Función de clamping — gráfica</h3>
+
+<div class="figure">
+<svg viewBox="0 0 500 340" xmlns="http://www.w3.org/2000/svg">
+    <!-- Axes -->
+    <line x1="60" y1="300" x2="460" y2="300" stroke="#e6edf3" stroke-width="1.5"/>
+    <line x1="150" y1="40"  x2="150" y2="320" stroke="#e6edf3" stroke-width="1.5"/>
+
+    <text x="455" y="295" fill="#9ba4b3" font-size="11">x</text>
+    <text x="160" y="45"  fill="#9ba4b3" font-size="11">y = clamp(x; 0, 1)</text>
+
+    <!-- Reference lines y=0, y=1 -->
+    <line x1="60" y1="260" x2="460" y2="260" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+    <line x1="60" y1="100" x2="460" y2="100" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+    <text x="70" y="265" fill="#27ae60" font-size="10">y=0</text>
+    <text x="70" y="95"  fill="#27ae60" font-size="10">y=1</text>
+
+    <!-- Reference lines x=0, x=1 -->
+    <line x1="250" y1="40" x2="250" y2="320" stroke="#3498db" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+    <text x="245" y="320" fill="#3498db" font-size="10" text-anchor="end">x=0</text>
+    <line x1="330" y1="40" x2="330" y2="320" stroke="#3498db" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+    <text x="335" y="320" fill="#3498db" font-size="10">x=1</text>
+
+    <!-- Clamp function: flat at 0 for x<0, linear 0->1 for 0<x<1, flat at 1 for x>1 -->
+    <polyline points="80,260 150,260 150,260 250,260 330,100 460,100" fill="none" stroke="#27ae60" stroke-width="3"/>
+
+    <!-- emphasized segments -->
+    <!-- Below: y=0 -->
+    <line x1="60" y1="260" x2="250" y2="260" stroke="#27ae60" stroke-width="4"/>
+    <!-- Middle: diagonal -->
+    <line x1="250" y1="260" x2="330" y2="100" stroke="#27ae60" stroke-width="4"/>
+    <!-- Above: y=1 -->
+    <line x1="330" y1="100" x2="460" y2="100" stroke="#27ae60" stroke-width="4"/>
+
+    <!-- Annotations -->
+    <text x="150" y="230" fill="#9ba4b3" font-size="11">x &lt; 0 →</text>
+    <text x="150" y="245" fill="#9ba4b3" font-size="11">y = 0</text>
+    <text x="290" y="185" fill="#9ba4b3" font-size="11">x en</text>
+    <text x="290" y="200" fill="#9ba4b3" font-size="11">[0,1] →</text>
+    <text x="290" y="215" fill="#9ba4b3" font-size="11">y = x</text>
+    <text x="400" y="125" fill="#9ba4b3" font-size="11">x &gt; 1 →</text>
+    <text x="400" y="140" fill="#9ba4b3" font-size="11">y = 1</text>
+</svg>
+<div class="caption">Los valores fuera del rango $[0,1]$ se "pegan" al borde más cercano; los que están dentro pasan sin cambios.</div>
+</div>
+
+<h3>Fórmula compacta</h3>
+<p style="text-align: center; font-size: 1.2em;">$$\text{clamp}(x; a, b) = \max\bigl(a,\; \min(b, x)\bigr)$$</p>
+<p>En nuestro pipeline $a = 0$ y $b = 1$ (imágenes en <code>double</code>).</p>
+
+<div class="analogy">
+El control de volumen del celular: va de 0 a 100. Presionar "subir" cuando ya estás en 100 no pasa a 101 — se queda en 100. Presionar "bajar" cuando estás en 0 no pasa a $-1$ — se queda en 0.
+</div>
+
+<h3>¿Por qué hace falta?</h3>
+<p>La conversión $\text{Lab} \to \text{RGB}$ tras CLAHE puede producir valores ligeramente fuera del rango $[0, 1]$ debido a:</p>
+<ul>
+    <li>Errores de redondeo en aritmética de punto flotante.</li>
+    <li>Puntos del espacio Lab que están fuera del <strong>gamut</strong> visible de RGB (colores que existen en Lab pero no pueden representarse en RGB).</li>
+</ul>
+<p>Sin clamping, al guardar la imagen como <code>uint8</code> MATLAB aplica truncamiento o wrap-around, produciendo "píxeles chillones" (rojo puro donde debería haber blanco, por ejemplo).</p>
+
+<h3>Uso en el código</h3>
+<pre><code>img = max(0, min(1, img));</code></pre>
+
+    </div>
+</section>
+
+<!-- ============ 6. MEDIANA ============ -->
+<section id="median" class="concept median">
+    <div class="concept-header">
+        <div class="number">6</div>
+        <span>FILTRO DE MEDIANA</span>
+        <span class="tagline">Denoise no lineal anti-impulso</span>
+    </div>
+    <div class="concept-body">
+
+<h3>¿Qué hace?</h3>
+<p>Reemplaza cada píxel por la <strong>mediana</strong> (valor central del conjunto ordenado) de los píxeles de su vecindad.</p>
+
+<h3>Mediana vs. promedio — ejemplo visual</h3>
+
+<div class="figure">
+<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg">
+    <!-- Input 3x3 -->
+    <text x="110" y="30" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Vecindad 3×3 (con ruido sal)</text>
+
+    <g font-family="monospace" font-size="14" text-anchor="middle">
+        <rect x="40"  y="50" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="65"  y="82" fill="#e6edf3">10</text>
+        <rect x="95"  y="50" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="120" y="82" fill="#e6edf3">12</text>
+        <rect x="150" y="50" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="175" y="82" fill="#e6edf3">11</text>
+
+        <rect x="40"  y="105" width="50" height="50" fill="#ffffff" stroke="#e74c3c" stroke-width="3"/><text x="65"  y="137" fill="#e74c3c" font-weight="700">255</text>
+        <rect x="95"  y="105" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="120" y="137" fill="#e6edf3">10</text>
+        <rect x="150" y="105" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="175" y="137" fill="#e6edf3">13</text>
+
+        <rect x="40"  y="160" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="65"  y="192" fill="#e6edf3">11</text>
+        <rect x="95"  y="160" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="120" y="192" fill="#e6edf3">12</text>
+        <rect x="150" y="160" width="50" height="50" fill="#2c3e50" stroke="#8e44ad"/><text x="175" y="192" fill="#e6edf3">10</text>
+    </g>
+
+    <text x="110" y="245" fill="#e74c3c" font-size="11" text-anchor="middle">↑ outlier (ruido)</text>
+
+    <!-- Median branch -->
+    <text x="400" y="75" fill="#27ae60" font-size="14" font-weight="700" text-anchor="middle">MEDIANA</text>
+    <text x="400" y="95" fill="#9ba4b3" font-size="10" text-anchor="middle">ordena y toma el central</text>
+    <text x="400" y="130" fill="#e6edf3" font-size="12" font-family="monospace" text-anchor="middle">{10, 10, 10, 11, <tspan fill="#27ae60" font-weight="700">11</tspan>, 12, 12, 13, 255}</text>
+    <text x="400" y="160" fill="#27ae60" font-size="20" font-weight="700" text-anchor="middle">resultado: 11</text>
+    <text x="400" y="185" fill="#27ae60" font-size="11" text-anchor="middle">✓ outlier descartado</text>
+
+    <!-- Mean branch -->
+    <text x="400" y="230" fill="#e74c3c" font-size="14" font-weight="700" text-anchor="middle">PROMEDIO</text>
+    <text x="400" y="250" fill="#9ba4b3" font-size="10" text-anchor="middle">(10+12+11+255+10+13+11+12+10)/9</text>
+    <text x="400" y="280" fill="#e74c3c" font-size="20" font-weight="700" text-anchor="middle">resultado: 38</text>
+    <text x="400" y="302" fill="#e74c3c" font-size="11" text-anchor="middle">✗ outlier contaminó el resultado</text>
+
+    <!-- Arrow -->
+    <line x1="215" y1="130" x2="290" y2="130" stroke="#27ae60" stroke-width="2" marker-end="url(#a4)"/>
+    <line x1="215" y1="260" x2="290" y2="260" stroke="#e74c3c" stroke-width="2" marker-end="url(#a5)"/>
+
+    <defs>
+        <marker id="a4" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+            <polygon points="0 0, 10 5, 0 10" fill="#27ae60"/>
+        </marker>
+        <marker id="a5" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+            <polygon points="0 0, 10 5, 0 10" fill="#e74c3c"/>
+        </marker>
+    </defs>
+</svg>
+<div class="caption">El outlier (255, píxel contaminado) mueve el promedio drásticamente pero no afecta la mediana.</div>
+</div>
+
+<h3>Propiedades</h3>
+<ol>
+    <li><strong>No lineal</strong>: no se puede expresar como convolución con un kernel fijo.</li>
+    <li><strong>Robusto a outliers</strong>: los píxeles aislados extremos no afectan la salida.</li>
+    <li><strong>Preserva bordes</strong> mejor que un filtro promedio, porque no introduce valores intermedios inventados.</li>
+    <li><strong>Ideal contra ruido impulsivo</strong> (sal y pimienta); poco efectivo contra ruido gaussiano — por eso se complementa con filtro gaussiano.</li>
+</ol>
+
+<h3>Uso en el código</h3>
+<pre><code>img(:,:,c) = medfilt2(img(:,:,c), [3 3]);</code></pre>
+
+    </div>
+</section>
+
+<!-- ============ 7. GRAY-WORLD ============ -->
+<section id="gray" class="concept gray">
+    <div class="concept-header">
+        <div class="number">7</div>
+        <span>GRAY-WORLD</span>
+        <span class="tagline">Balance de blancos automático</span>
+    </div>
+    <div class="concept-body">
+
+<h3>La hipótesis</h3>
+<p>En una escena natural típica, la suma de todos los colores presentes se aproxima a <strong>gris neutro</strong>. Si en una foto el promedio del canal rojo es significativamente mayor que el del verde o azul, es porque la <strong>iluminación</strong> tiene un tinte cálido (bombilla incandescente), no porque la escena sea "roja".</p>
+
+<h3>Efecto visual</h3>
+
+<div class="figure">
+<svg viewBox="0 0 700 240" xmlns="http://www.w3.org/2000/svg">
+    <!-- Original with warm tint -->
+    <text x="120" y="30" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Foto con luz cálida</text>
+    <rect x="30" y="50" width="180" height="120" fill="#d4a559"/>
+    <!-- Little objects -->
+    <rect x="70"  y="100" width="40" height="15" fill="#c17d00"/>
+    <rect x="130" y="95"  width="50" height="20" fill="#996b3d"/>
+    <text x="120" y="185" fill="#9ba4b3" font-size="10" text-anchor="middle">R̄ dominante</text>
+    <text x="120" y="200" fill="#9ba4b3" font-size="10" text-anchor="middle">(promedio rojo alto)</text>
+
+    <!-- Arrow -->
+    <line x1="235" y1="110" x2="320" y2="110" stroke="#e6edf3" stroke-width="2" marker-end="url(#a6)"/>
+    <text x="278" y="100" fill="#e6edf3" font-size="11" text-anchor="middle" font-weight="700">gray-world</text>
+    <text x="278" y="125" fill="#9ba4b3" font-size="10" text-anchor="middle">escala canales</text>
+
+    <!-- Corrected (neutral) -->
+    <text x="450" y="30" fill="#e6edf3" font-size="13" text-anchor="middle" font-weight="700">Foto corregida</text>
+    <rect x="360" y="50" width="180" height="120" fill="#bababa"/>
+    <rect x="400" y="100" width="40" height="15" fill="#808080"/>
+    <rect x="460" y="95"  width="50" height="20" fill="#646464"/>
+    <text x="450" y="185" fill="#9ba4b3" font-size="10" text-anchor="middle">R̄ ≈ Ḡ ≈ B̄</text>
+    <text x="450" y="200" fill="#9ba4b3" font-size="10" text-anchor="middle">(promedios iguales)</text>
+
+    <!-- Formula summary right -->
+    <text x="620" y="90" fill="#9ba4b3" font-size="14" font-family="serif" text-anchor="middle">I'(x,y,c) =</text>
+    <text x="620" y="115" fill="#9ba4b3" font-size="14" font-family="serif" text-anchor="middle">I(x,y,c) · m̄/c̄</text>
+
+    <defs>
+        <marker id="a6" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+            <polygon points="0 0, 10 5, 0 10" fill="#e6edf3"/>
+        </marker>
+    </defs>
+</svg>
+<div class="caption">El algoritmo detecta que el promedio del rojo es dominante y escala los canales para imponer $\bar R = \bar G = \bar B$.</div>
+</div>
+
+<h3>La corrección matemática</h3>
+<p>Se calcula la media de cada canal y una media global, y se escala cada canal para que su media iguale la global:</p>
+<p style="text-align: center; font-size: 1.1em;">
+$$\bar{c} = \frac{1}{HW}\sum_{x,y} I(x,y,c), \qquad \bar{m} = \frac{\bar{R} + \bar{G} + \bar{B}}{3}$$
+$$I'(x,y,c) = I(x,y,c) \cdot \frac{\bar{m}}{\bar{c}}$$
+</p>
+
+<h3>Ventajas y limitaciones</h3>
+
+<div class="grid">
+    <div class="mini-card" style="border-color: #27ae60">
+        <h4>✓ Ventajas</h4>
+        <p>Sin parámetros<br>Muy rápido<br>Bien en escenas cromáticas variadas</p>
+    </div>
+    <div class="mini-card" style="border-color: #e74c3c">
+        <h4>✗ Limitaciones</h4>
+        <p>Falla con escenas monocromáticas (solo marcadores rojos oscurecería el rojo)</p>
+    </div>
+    <div class="mini-card" style="border-color: #9b59b6">
+        <h4>🔄 Alternativas</h4>
+        <p>Shades of Gray<br>max-RGB<br>Gray-Edge</p>
+    </div>
+</div>
+
+    </div>
+</section>
+
+<!-- ============ SUMMARY ============ -->
+<section id="summary" class="summary">
+    <h2>🎯 Resumen integrado</h2>
+    <p>Los conceptos no son aislados: son piezas de un mismo razonamiento.</p>
+
+    <div class="grid">
+        <div class="mini-card" style="border-color: var(--lab)">
+            <h4>1. Lab</h4>
+            <p>Separa brillo del color para poder tocar solo uno</p>
+        </div>
+        <div class="mini-card" style="border-color: var(--median)">
+            <h4>2. Mediana</h4>
+            <p>Elimina outliers (sal y pimienta) sin mover bordes</p>
+        </div>
+        <div class="mini-card" style="border-color: var(--gauss)">
+            <h4>3. Gaussiano</h4>
+            <p>Suaviza ruido residual de baja amplitud</p>
+        </div>
+        <div class="mini-card" style="border-color: var(--gray)">
+            <h4>4. Gray-world</h4>
+            <p>Corrige tinte de iluminación sin parámetros</p>
+        </div>
+        <div class="mini-card" style="border-color: var(--clahe)">
+            <h4>5. CLAHE</h4>
+            <p>Ecualiza contraste por zonas (tiles)</p>
+        </div>
+        <div class="mini-card" style="border-color: var(--tiles)">
+            <h4>6. Tiles 8×8</h4>
+            <p>Grilla de CLAHE para adaptación local</p>
+        </div>
+        <div class="mini-card" style="border-color: var(--clip)">
+            <h4>7. Clip limit</h4>
+            <p>Evita que CLAHE amplifique ruido</p>
+        </div>
+        <div class="mini-card" style="border-color: var(--clamp)">
+            <h4>8. Clamping</h4>
+            <p>Garantiza que el resultado esté en [0,1]</p>
+        </div>
+    </div>
+
+    <h3 style="color: white; margin-top: 2rem;">Flujo completo del pipeline</h3>
+
+<div class="figure" style="background: rgba(0,0,0,0.2)">
+<svg viewBox="0 0 900 180" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <marker id="aF" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+            <polygon points="0 0, 10 5, 0 10" fill="#e6edf3"/>
+        </marker>
+    </defs>
+
+    <g font-size="11" text-anchor="middle" font-weight="700">
+        <rect x="10"  y="60" width="100" height="50" rx="6" fill="#34495e" stroke="#95a5a6"/>
+        <text x="60" y="80" fill="white">Entrada</text>
+        <text x="60" y="97" fill="#bdc3c7" font-weight="400">uint8 RGB</text>
+
+        <rect x="130" y="60" width="100" height="50" rx="6" fill="#7f8c8d"/>
+        <text x="180" y="80" fill="white">1. Normaliza</text>
+        <text x="180" y="97" fill="#ecf0f1" font-weight="400">→ double</text>
+
+        <rect x="250" y="60" width="100" height="50" rx="6" fill="#8e44ad"/>
+        <text x="300" y="80" fill="white">2. Mediana</text>
+        <text x="300" y="97" fill="#ecf0f1" font-weight="400">3×3</text>
+
+        <rect x="370" y="60" width="100" height="50" rx="6" fill="#16a085"/>
+        <text x="420" y="80" fill="white">3. Gaussiano</text>
+        <text x="420" y="97" fill="#ecf0f1" font-weight="400">σ=0.8</text>
+
+        <rect x="490" y="60" width="100" height="50" rx="6" fill="#95a5a6"/>
+        <text x="540" y="80" fill="white">4. Gray-world</text>
+        <text x="540" y="97" fill="#ecf0f1" font-weight="400">white balance</text>
+
+        <rect x="610" y="60" width="100" height="50" rx="6" fill="#3498db"/>
+        <text x="660" y="80" fill="white">5. CLAHE</text>
+        <text x="660" y="97" fill="#ecf0f1" font-weight="400">en L de Lab</text>
+
+        <rect x="730" y="60" width="100" height="50" rx="6" fill="#27ae60"/>
+        <text x="780" y="80" fill="white">Clamp + out</text>
+        <text x="780" y="97" fill="#ecf0f1" font-weight="400">max(0,min(1,·))</text>
+
+        <g stroke="#e6edf3" stroke-width="2" fill="none">
+            <line x1="110" y1="85" x2="130" y2="85" marker-end="url(#aF)"/>
+            <line x1="230" y1="85" x2="250" y2="85" marker-end="url(#aF)"/>
+            <line x1="350" y1="85" x2="370" y2="85" marker-end="url(#aF)"/>
+            <line x1="470" y1="85" x2="490" y2="85" marker-end="url(#aF)"/>
+            <line x1="590" y1="85" x2="610" y2="85" marker-end="url(#aF)"/>
+            <line x1="710" y1="85" x2="730" y2="85" marker-end="url(#aF)"/>
+        </g>
+    </g>
+</svg>
+<div class="caption">Pipeline completo: cada etapa ataca un problema específico y el orden responde a dependencias causales.</div>
+</div>
+
+</section>
+
+<footer>
+    Proyecto de Mitad de Semestre — Visión por Computadora (1MTR27)<br>
+    Jamin Yauri Cajas · Abril 2026
+</footer>
+
+</div>
+</body>
+</html>
