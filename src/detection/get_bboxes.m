@@ -30,12 +30,15 @@ function bboxes = get_bboxes(imgPreproc, opts, mask)
         'maxArea',        120000, ...
         'minAspect',      1.2, ...
         'dilateR',        4, ...
-        'minMaskOverlap', 0.12 ...
+        'minMaskOverlap', 0.12, ...
+        'enhAlpha',       0.5  ...   % alpha para img_enhancement (equipo)
     );
     opts = merge_opts(defaults, opts);
 
-    % 1. Escala de grises
-    gray = rgb2gray(imgPreproc);
+    % 1. Imagen en grises con realce FFT via img_enhancement del equipo
+    %    H(u,v) = -(u^2+v^2) en frecuencia = Laplaciano exacto (mas preciso
+    %    que el kernel 3x3 de f_laplaciano). Produce bordes mas nitidos para Canny.
+    gray = max(0, min(1, img_enhancement(im2uint8(imgPreproc), opts.enhAlpha)));
 
     % 2. Canny sobre imagen COMPLETA (sin enmascarar)
     %    Enmascarar antes crea bordes artificiales en la frontera de la
