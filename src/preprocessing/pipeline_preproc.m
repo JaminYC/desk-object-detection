@@ -50,14 +50,14 @@ function imgOut = pipeline_preproc(imgIn, opts)
     img = max(0, min(1, img));
     fprintf('[preproc] 1/5 Input: %dx%dx%d\n', size(img,1), size(img,2), size(img,3));
 
-    % ── 2. Bilateral (Lab) ────────────────────────────────────────────────
-    % Edge-preserving denoising en espacio Lab (preserva bordes de objetos)
-    % Reemplaza median+Gaussian con resultado de mayor calidad
-    lab = rgb2lab(img);
-    lab = imbilatfilt(lab, opts.bilateralGS, opts.bilateralSpatial);
-    img = lab2rgb(lab);
-    img = max(0, min(1, img));
-    fprintf('[preproc] 2/5 Bilateral OK\n');
+    % ── 2. Bilateral (Lab) via f_bilateral del equipo ────────────────────
+    % f_bilateral recibe uint8, trabaja en Lab con imbilatfilt, retorna uint8
+    img_u8 = im2uint8(img);
+    img_u8 = f_bilateral(img_u8, opts.bilateralGS, opts.bilateralSpatial);
+    img    = im2double(img_u8);
+    img    = max(0, min(1, img));
+    fprintf('[preproc] 2/5 Bilateral OK (f_bilateral: GS=%d, spatial=%d)\n', ...
+        opts.bilateralGS, opts.bilateralSpatial);
 
     % ── 3. White balance (gray-world) ─────────────────────────────────────
     % Corrige tinte de color: fundamental para CL (techo), LL (lámpara)
@@ -81,17 +81,15 @@ function imgOut = pipeline_preproc(imgIn, opts)
     img = max(0, min(1, img));
     fprintf('[preproc] 4/5 CLAHE OK\n');
 
-    % ── 5. Realce Laplaciano (sharpening) ────────────────────────────────
-    % Refuerza bordes de objetos: mejora contraste para detección Canny
+    % ── 5. Realce Laplaciano via f_laplaciano del equipo ─────────────────
+    % f_laplaciano(I, kernelAlpha) devuelve la respuesta del filtro Laplaciano.
+    % Aplicamos sharpening: img_sharp = img - sharpenAlpha * laplaciano(img)
     if opts.sharpenAlpha > 0
-        filtro = fspecial('laplacian', 0.2);
-        for ch = 1:3
-            canal    = img(:,:,ch);
-            lap      = imfilter(canal, filtro, 'replicate');
-            img(:,:,ch) = canal - opts.sharpenAlpha * lap;
-        end
+        lap = f_laplaciano(img, 0.2);          % kernelAlpha=0.2 (forma del kernel)
+        img = img - opts.sharpenAlpha * lap;   % sharpenAlpha controla intensidad
         img = max(0, min(1, img));
-        fprintf('[preproc] 5/5 Laplaciano OK (alpha=%.2f)\n', opts.sharpenAlpha);
+        fprintf('[preproc] 5/5 Laplaciano OK (f_laplaciano: kernelAlpha=0.2, sharpen=%.2f)\n', ...
+            opts.sharpenAlpha);
     else
         fprintf('[preproc] 5/5 Laplaciano OFF\n');
     end
