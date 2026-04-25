@@ -70,19 +70,19 @@ function ui_pipeline()
     uicontrol(fig,'Style','text','String','Canny Low:', ...
         'Position',[px+10 316 100 14],'HorizontalAlignment','left','FontSize',8, ...
         'BackgroundColor',[0.94 0.94 0.94]);
-    [slCLo,   vlCLo]   = mkslider(fig, [px+10 300 200 14], 0.01,0.15,0.04,'%.3f','');
+    [slCLo,   vlCLo]   = mkslider(fig, [px+10 300 200 14], 0.01,0.15,0.05,'%.3f','');
 
     %   slCLo bottom=300. Siguiente label <= 300-10=290
     uicontrol(fig,'Style','text','String','Canny High:', ...
         'Position',[px+10 278 100 14],'HorizontalAlignment','left','FontSize',8, ...
         'BackgroundColor',[0.94 0.94 0.94]);
-    [slCHi,   vlCHi]   = mkslider(fig, [px+10 262 200 14], 0.05,0.50,0.18,'%.3f','');
+    [slCHi,   vlCHi]   = mkslider(fig, [px+10 262 200 14], 0.05,0.50,0.20,'%.3f','');
 
     %   slCHi bottom=262. Siguiente label <= 262-10=252
     uicontrol(fig,'Style','text','String','Area minima (px):', ...
         'Position',[px+10 240 130 14],'HorizontalAlignment','left','FontSize',8, ...
         'BackgroundColor',[0.94 0.94 0.94]);
-    [slArea,  vlArea]  = mkslider(fig, [px+10 224 200 14], 200,8000,1200,'%.0f','');
+    [slArea,  vlArea]  = mkslider(fig, [px+10 224 200 14], 200,8000,500,'%.0f','');
 
     % ── Boton procesar ────────────────────────────────────────────────────
     %   slArea bottom=224. btnRun top <= 224-14=210 → btnRun_y<=170
