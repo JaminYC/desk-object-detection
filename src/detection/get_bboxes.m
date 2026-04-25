@@ -1,66 +1,76 @@
 function bboxes = get_bboxes(imgPreproc, opts, mask)
-% GET_BBOXES  Detecta objetos en imagen preprocesada y retorna bounding boxes.
+% GET_BBOXES  Detecta objetos y retorna bounding boxes.
 %
-%   bboxes = GET_BBOXES(imgPreproc) detecta objetos elongados sobre fondo
-%   uniforme (lápices, lapiceros, borradores, plumones) usando bordes Canny
-%   + morfología + regionprops.
+%   Pipeline: Canny (imagen completa) -> morfologia -> imclearborder ->
+%   filtro por solapamiento con mascara de color -> filtro area/aspecto.
 %
 %   Entradas:
-%       imgPreproc : HxWx3 double [0,1] — imagen preprocesada (de pipeline_preproc)
-%       opts       : struct opcional con campos:
-%           .cannyLow     (default: 0.05)  — umbral bajo Canny
-%           .cannyHigh    (default: 0.20)  — umbral alto Canny
-%           .minArea      (default: 1500)  — área mínima de región (px)
-%           .maxArea      (default: 150000)— área máxima de región (px)
-%           .minAspect    (default: 1.5)   — aspect ratio mínimo (largo/ancho)
-%           .dilateR      (default: 4)     — radio de dilatación morfológica
-%       mask       : HxW logical opcional — Canny solo en regiones true
-%                    (de segment_by_color); si se omite, usa imagen completa
+%       imgPreproc : HxWx3 double [0,1]
+%       opts       : struct opcional:
+%           .cannyLow        (default: 0.04)   umbral bajo Canny
+%           .cannyHigh       (default: 0.18)   umbral alto Canny
+%           .minArea         (default: 1200)   area minima px
+%           .maxArea         (default: 120000) area maxima px
+%           .minAspect       (default: 1.2)    aspect ratio minimo
+%           .dilateR         (default: 4)      radio cierre morfologico
+%           .minMaskOverlap  (default: 0.12)   fraccion minima del bbox
+%                             que debe solapar con mascara de color
+%       mask : HxW logical opcional (de segment_by_color)
+%              Si se omite se usa imagen completa sin filtro de color.
 %
 %   Salida:
-%       bboxes : Nx4 double [x, y, w, h] en píxeles (formato regionprops)
+%       bboxes : Nx4 [x y w h]
 
     if nargin < 2 || isempty(opts), opts = struct(); end
     if nargin < 3, mask = []; end
     defaults = struct( ...
-        'cannyLow',  0.05, ...
-        'cannyHigh', 0.20, ...
-        'minArea',   1500, ...
-        'maxArea',   150000, ...
-        'minAspect', 1.5, ...
-        'dilateR',   4 ...
+        'cannyLow',       0.04, ...
+        'cannyHigh',      0.18, ...
+        'minArea',        1200, ...
+        'maxArea',        120000, ...
+        'minAspect',      1.2, ...
+        'dilateR',        4, ...
+        'minMaskOverlap', 0.12 ...
     );
     opts = merge_opts(defaults, opts);
 
     % 1. Escala de grises
     gray = rgb2gray(imgPreproc);
 
-    % 2. Aplicar mascara de color: Canny solo en regiones de interes
-    if ~isempty(mask)
-        maskD = imdilate(mask, strel('disk', 8));
-        gray  = gray .* double(maskD);
-    end
-
-    % 3. Bordes Canny
+    % 2. Canny sobre imagen COMPLETA (sin enmascarar)
+    %    Enmascarar antes crea bordes artificiales en la frontera de la
+    %    mascara que Canny detecta como objetos falsos.
     edges = edge(gray, 'canny', [opts.cannyLow, opts.cannyHigh]);
 
-    % 4. Morfologia: cierra bordes abiertos, une fragmentos cercanos
-    se_close = strel('disk', opts.dilateR);
-    filled   = imclose(edges, se_close);
-    filled   = imfill(filled, 'holes');
-
-    % 5. Eliminar borde de imagen (artefactos de borde)
+    % 3. Morfologia: cierra bordes, rellena huecos
+    se    = strel('disk', opts.dilateR);
+    filled = imclose(edges, se);
+    filled = imfill(filled, 'holes');
     filled = imclearborder(filled);
 
-    % 6. Regiones conectadas y filtro por area y aspecto
-    props = regionprops(filled, 'BoundingBox', 'Area', 'Extent');
+    % 4. Filtro por solapamiento con mascara de color
+    %    Mantiene solo regiones cuyo interior solapa >= minMaskOverlap
+    %    con los pixeles de objeto detectados por HSV.
+    if ~isempty(mask) && any(mask(:))
+        cc       = bwconncomp(filled);
+        keep     = false(size(filled));
+        for i = 1:cc.NumObjects
+            idx     = cc.PixelIdxList{i};
+            overlap = sum(mask(idx)) / numel(idx);
+            if overlap >= opts.minMaskOverlap
+                keep(idx) = true;
+            end
+        end
+        filled = keep;
+    end
 
+    % 5. Filtro por area y aspect ratio
+    props  = regionprops(filled, 'BoundingBox', 'Area');
     bboxes = [];
     for k = 1:numel(props)
         a   = props(k).Area;
-        bb  = props(k).BoundingBox;   % [x, y, w, h]
+        bb  = props(k).BoundingBox;
         asp = max(bb(3), bb(4)) / (min(bb(3), bb(4)) + eps);
-
         if a >= opts.minArea && a <= opts.maxArea && asp >= opts.minAspect
             bboxes = [bboxes; bb]; %#ok<AGROW>
         end
