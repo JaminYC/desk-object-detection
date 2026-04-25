@@ -20,13 +20,18 @@ refDir = fullfile(projectRoot, 'dataset', 'reference');
 outDir = fullfile(projectRoot, 'results', 'figures', 'avance_24abril');
 if ~exist(outDir, 'dir'), mkdir(outDir); end
 
-% Condiciones: carpeta → etiqueta legible
+% Condiciones de iluminación del dataset:
+%   CL  = Luz de techo
+%   CSL = Con cortina (luz de techo bloqueada)
+%   LL  = Luz de lámpara (fotos Left y Right)
+%   NL  = Luz natural
+%   RL  = Luz natural con cortina
 conditions = {
-    'NL',  'Normal';
-    'CL',  'Con Luz Brillante';
-    'LL',  'Poca Luz';
-    'RL',  'Rotada/Inclinada';
-    'CSL', 'Con Sombra';
+    'NL',  'Luz Natural';
+    'CL',  'Luz de Techo';
+    'LL',  'Luz de Lampara (Izq/Der)';
+    'RL',  'Luz Natural con Cortina';
+    'CSL', 'Con Cortina';
 };
 
 % Por cada condición tomar hasta MAX_PER_COND imágenes (Small para velocidad)
