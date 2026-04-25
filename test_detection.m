@@ -1,11 +1,10 @@
-%% TEST_DETECTION — Prueba pipeline completo: preprocesamiento + detección
-% Corre sobre todas las imágenes de dataset/reference/ y genera figuras
-% con bounding boxes detectados. Guarda resultados en results/figures/deteccion/
+%% TEST_DETECTION  Pipeline completo adaptativo: iluminacion + preproc + color + deteccion
 %
-% CÓMO CORRER:
-%   1. Abre MATLAB
-%   2. Navega a la carpeta desk-object-detection/
-%   3. Ejecuta: test_detection
+%   Por cada condicion (NL/CL/LL/RL/CSL) procesa 3 imagenes Small y genera
+%   figuras de 4 paneles:
+%     Original | Preprocesada | Mascara de color | Detecciones (bboxes)
+%
+%   CORRER: cd a desk-object-detection/ y ejecutar test_detection
 
 clear; close all; clc;
 
@@ -16,82 +15,92 @@ refDir = fullfile(projectRoot, 'dataset', 'reference');
 outDir = fullfile(projectRoot, 'results', 'figures', 'deteccion');
 if ~exist(outDir, 'dir'), mkdir(outDir); end
 
-% Recopilar imágenes
-exts  = {'*.jpg','*.jpeg','*.png','*.JPG'};
-files = [];
-for e = 1:numel(exts)
-    files = [files; dir(fullfile(refDir, exts{e}))]; %#ok<AGROW>
-end
+conditions = {'NL','CL','LL','RL','CSL'};
+MAX_PER_COND = 3;
 
-if isempty(files)
-    error('No hay imágenes en dataset/reference/');
-end
-fprintf('[test] %d imágenes encontradas\n\n', numel(files));
+results = struct('name',{}, 'condition',{}, 'lightDetected',{}, 'n_bboxes',{});
 
-% Opciones de detección (ajustables)
-detectOpts.cannyLow  = 0.05;
-detectOpts.cannyHigh = 0.20;
-detectOpts.minArea   = 1500;
-detectOpts.maxArea   = 200000;
-detectOpts.minAspect = 1.5;
-detectOpts.dilateR   = 5;
+for c = 1:numel(conditions)
+    condCode = conditions{c};
 
-results = struct('name', {}, 'n_detected', {});
+    smallDir = fullfile(refDir, condCode, 'Small');
+    ogDir    = fullfile(refDir, condCode, 'OG');
+    ogDir2   = fullfile(refDir, condCode, 'Og');
 
-for k = 1:numel(files)
-    filePath = fullfile(files(k).folder, files(k).name);
-    [~, baseName, ~] = fileparts(files(k).name);
-
-    fprintf('--- (%d/%d) %s ---\n', k, numel(files), files(k).name);
-
-    % Leer y normalizar
-    raw = imread(filePath);
-    if size(raw, 3) == 1
-        raw = cat(3, raw, raw, raw);
-    end
-    if ~isa(raw, 'uint8')
-        raw = uint8(raw * 255);
+    if     exist(smallDir, 'dir'), searchDir = smallDir;
+    elseif exist(ogDir,    'dir'), searchDir = ogDir;
+    elseif exist(ogDir2,   'dir'), searchDir = ogDir2;
+    else
+        fprintf('[test] Carpeta %s no encontrada, saltando.\n', condCode);
+        continue
     end
 
-    % Preprocesamiento
-    fprintf('[preproc] procesando...\n');
-    imgP = pipeline_preproc(raw);
+    files = [dir(fullfile(searchDir,'*.jpg')); dir(fullfile(searchDir,'*.JPG'))];
+    if isempty(files)
+        fprintf('[test] Sin imagenes en %s\n', searchDir);
+        continue
+    end
 
-    % Detección
-    bboxes = get_bboxes(imgP, detectOpts);
-    nDet   = size(bboxes, 1);
-    results(end+1) = struct('name', baseName, 'n_detected', nDet); %#ok<SAGROW>
+    nUse = min(MAX_PER_COND, numel(files));
+    condOutDir = fullfile(outDir, condCode);
+    if ~exist(condOutDir, 'dir'), mkdir(condOutDir); end
 
-    % Figura: 3 paneles — original | preprocesada | detecciones
-    fig = figure('Visible', 'off', 'Position', [50 50 1800 550]);
+    fprintf('\n[test] === %s: procesando %d imagenes ===\n', condCode, nUse);
 
-    subplot(1,3,1);
-    imshow(raw);
-    title('Original', 'FontSize', 12);
+    for k = 1:nUse
+        filePath = fullfile(files(k).folder, files(k).name);
+        [~, baseName, ~] = fileparts(files(k).name);
 
-    subplot(1,3,2);
-    imshow(imgP);
-    title('Preprocesada', 'FontSize', 12);
+        raw = imread(filePath);
+        if size(raw,3) == 1, raw = cat(3,raw,raw,raw); end
 
-    subplot(1,3,3);
-    visualize_detections(imgP, bboxes, ...
-        sprintf('Detecciones: %d objeto(s)', nDet));
+        fprintf('[test] (%d/%d) %s\n', k, nUse, files(k).name);
+        tic;
+        [bboxes, lightCond, imgProc, colorMask] = detect_objects(raw);
+        t = toc;
+        fprintf('[test] %.2fs  |  cond. detectada: %s  |  %d bbox(es)\n', ...
+            t, lightCond, size(bboxes,1));
 
-    sgtitle(baseName, 'FontSize', 11, 'Interpreter', 'none');
+        results(end+1) = struct('name', baseName, 'condition', condCode, ...
+            'lightDetected', lightCond, 'n_bboxes', size(bboxes,1)); %#ok<SAGROW>
 
-    outPath = fullfile(outDir, sprintf('%s_deteccion.png', baseName));
-    exportgraphics(fig, outPath, 'Resolution', 120);
-    close(fig);
+        % ── Figura 4 paneles ─────────────────────────────────────────────
+        fig = figure('Visible','off','Position',[50 50 1800 480]);
 
-    fprintf('[test] guardado: %s\n\n', outPath);
+        subplot(1,4,1);
+        imshow(raw);
+        title('Original','FontSize',11);
+
+        subplot(1,4,2);
+        imshow(imgProc);
+        title(sprintf('Preprocesada [%s]', lightCond),'FontSize',11);
+
+        subplot(1,4,3);
+        imshow(colorMask);
+        title('Mascara color (HSV)','FontSize',11);
+
+        subplot(1,4,4);
+        visualize_detections(imgProc, bboxes, ...
+            sprintf('Detecciones: %d', size(bboxes,1)));
+
+        sgtitle(sprintf('[%s] %s', condCode, baseName), ...
+            'FontSize',10,'Interpreter','none');
+
+        outPath = fullfile(condOutDir, sprintf('%s_det.png', baseName));
+        exportgraphics(fig, outPath, 'Resolution',120);
+        close(fig);
+    end
 end
 
-% Resumen
-fprintf('\n========== RESUMEN ==========\n');
-fprintf('%-40s  %s\n', 'Imagen', 'Objetos detectados');
-fprintf('%s\n', repmat('-', 1, 55));
+% ── Resumen ──────────────────────────────────────────────────────────────
+fprintf('\n========== RESUMEN DETECCION ==========\n');
+fprintf('%-32s %-6s %-6s %s\n', 'Imagen', 'Real', 'Detec', 'Bboxes');
+fprintf('%s\n', repmat('-',1,55));
 for k = 1:numel(results)
-    fprintf('%-40s  %d\n', results(k).name, results(k).n_detected);
+    match = strcmp(results(k).condition, results(k).lightDetected);
+    flag  = ''; if ~match, flag = '  <- distinto'; end
+    fprintf('%-32s %-6s %-6s %d%s\n', results(k).name, ...
+        results(k).condition, results(k).lightDetected, ...
+        results(k).n_bboxes, flag);
 end
-fprintf('\nFiguras guardadas en: %s\n', outDir);
-fprintf('Abre esa carpeta en el explorador para ver los resultados.\n');
+fprintf('\nFiguras en: %s\n', outDir);

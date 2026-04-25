@@ -1,4 +1,4 @@
-function bboxes = get_bboxes(imgPreproc, opts)
+function bboxes = get_bboxes(imgPreproc, opts, mask)
 % GET_BBOXES  Detecta objetos en imagen preprocesada y retorna bounding boxes.
 %
 %   bboxes = GET_BBOXES(imgPreproc) detecta objetos elongados sobre fondo
@@ -14,11 +14,14 @@ function bboxes = get_bboxes(imgPreproc, opts)
 %           .maxArea      (default: 150000)— área máxima de región (px)
 %           .minAspect    (default: 1.5)   — aspect ratio mínimo (largo/ancho)
 %           .dilateR      (default: 4)     — radio de dilatación morfológica
+%       mask       : HxW logical opcional — Canny solo en regiones true
+%                    (de segment_by_color); si se omite, usa imagen completa
 %
 %   Salida:
 %       bboxes : Nx4 double [x, y, w, h] en píxeles (formato regionprops)
 
     if nargin < 2 || isempty(opts), opts = struct(); end
+    if nargin < 3, mask = []; end
     defaults = struct( ...
         'cannyLow',  0.05, ...
         'cannyHigh', 0.20, ...
@@ -32,18 +35,24 @@ function bboxes = get_bboxes(imgPreproc, opts)
     % 1. Escala de grises
     gray = rgb2gray(imgPreproc);
 
-    % 2. Bordes Canny
+    % 2. Aplicar mascara de color: Canny solo en regiones de interes
+    if ~isempty(mask)
+        maskD = imdilate(mask, strel('disk', 8));
+        gray  = gray .* double(maskD);
+    end
+
+    % 3. Bordes Canny
     edges = edge(gray, 'canny', [opts.cannyLow, opts.cannyHigh]);
 
-    % 3. Morfología — cierra bordes abiertos, une fragmentos cercanos
+    % 4. Morfologia: cierra bordes abiertos, une fragmentos cercanos
     se_close = strel('disk', opts.dilateR);
     filled   = imclose(edges, se_close);
     filled   = imfill(filled, 'holes');
 
-    % 4. Eliminar borde de imagen (artefactos de borde)
+    % 5. Eliminar borde de imagen (artefactos de borde)
     filled = imclearborder(filled);
 
-    % 5. Regiones conectadas y filtro por área y aspecto
+    % 6. Regiones conectadas y filtro por area y aspecto
     props = regionprops(filled, 'BoundingBox', 'Area', 'Extent');
 
     bboxes = [];
