@@ -1,83 +1,107 @@
-%% DEMO_24ABRIL — Avance del preprocesamiento
-% Proyecto de Mitad de Semestre — Visión por Computadora (1MTR27)
-% Grupo: [nombres]
+%% DEMO_24ABRIL — Avance de preprocesamiento
+% Proyecto de Mitad de Semestre — Visión por Computadora (1MTR27) PUCP 2026-1
 %
-% Este script:
-%   1. Carga imágenes de dataset/raw + dataset/reference
-%   2. Aplica el pipeline de preprocesamiento automático
-%   3. Genera figuras comparativas (antes/después) en results/figures
-%   4. Reporta métricas básicas en consola
+% Procesa imágenes del dataset/reference/ por condición de iluminación:
+%   CL  = Con luz brillante
+%   NL  = Normal
+%   LL  = Low light (poca luz)
+%   RL  = Rotada / inclinada
+%   CSL = Con sombra de luz
+%
+% Genera figuras comparativas (antes/después) en results/figures/avance_24abril/
+% CÓMO CORRER: cd a desk-object-detection/ y ejecutar demo_24abril
 
 clear; close all; clc;
 
-% ---------- Configuración ----------
 projectRoot = fileparts(mfilename('fullpath'));  % el script está en la raíz
 addpath(genpath(fullfile(projectRoot, 'src')));
 
-rawDir       = fullfile(projectRoot, 'dataset', 'raw');
-referenceDir = fullfile(projectRoot, 'dataset', 'reference');
-outDir       = fullfile(projectRoot, 'results', 'figures', 'avance_24abril');
-if ~exist(outDir, 'dir'); mkdir(outDir); end
+refDir = fullfile(projectRoot, 'dataset', 'reference');
+outDir = fullfile(projectRoot, 'results', 'figures', 'avance_24abril');
+if ~exist(outDir, 'dir'), mkdir(outDir); end
 
-% ---------- Recopilar imágenes a procesar ----------
-exts = {'*.jpg','*.jpeg','*.png'};
-files = [];
-for dir_ = {rawDir, referenceDir}
-    d = dir_{1};
-    if exist(d, 'dir')
-        for e = 1:numel(exts)
-            files = [files; dir(fullfile(d, '**', exts{e}))]; %#ok<AGROW>
-        end
-    end
-end
+% Condiciones: carpeta → etiqueta legible
+conditions = {
+    'NL',  'Normal';
+    'CL',  'Con Luz Brillante';
+    'LL',  'Poca Luz';
+    'RL',  'Rotada/Inclinada';
+    'CSL', 'Con Sombra';
+};
 
-if isempty(files)
-    warning('No se encontraron imágenes en dataset/raw ni dataset/reference.');
-    return;
-end
+% Por cada condición tomar hasta MAX_PER_COND imágenes (Small para velocidad)
+MAX_PER_COND = 3;
 
-fprintf('[demo] Se procesarán %d imágenes.\n', numel(files));
+metrics = struct('name',{}, 'condition',{}, 'psnr',{}, 'ssim',{});
 
-% ---------- Procesar ----------
-metrics = struct('name', {}, 'psnr', {}, 'ssim', {});
+for c = 1:size(conditions, 1)
+    condCode = conditions{c, 1};
+    condName = conditions{c, 2};
 
-for k = 1:numel(files)
-    filePath = fullfile(files(k).folder, files(k).name);
-    [~, baseName, ~] = fileparts(files(k).name);
+    % Preferir Small (más rápido); si no, usar OG
+    smallDir = fullfile(refDir, condCode, 'Small');
+    ogDir    = fullfile(refDir, condCode, 'OG');
+    ogDir2   = fullfile(refDir, condCode, 'Og');
 
-    fprintf('\n[demo] (%d/%d) %s\n', k, numel(files), files(k).name);
-
-    img = imread(filePath);
-    if size(img, 3) == 1
-        img = cat(3, img, img, img);   % escala a RGB si es gris
+    if     exist(smallDir, 'dir'), searchDir = smallDir;
+    elseif exist(ogDir,    'dir'), searchDir = ogDir;
+    elseif exist(ogDir2,   'dir'), searchDir = ogDir2;
+    else
+        fprintf('[demo] Carpeta %s no encontrada, saltando.\n', condCode);
+        continue
     end
 
-    tic;
-    imgOut = pipeline_preproc(img);
-    t = toc;
-    fprintf('[demo] tiempo: %.3f s\n', t);
+    files = [dir(fullfile(searchDir,'*.jpg')); dir(fullfile(searchDir,'*.JPG'))];
+    if isempty(files)
+        fprintf('[demo] Sin imágenes en %s\n', searchDir);
+        continue
+    end
 
-    % Métricas cuantitativas rápidas (referencia = imagen original normalizada)
-    imgRef = im2double(img);
-    psnrVal = psnr(imgOut, imgRef);
-    ssimVal = ssim(imgOut, imgRef);
-    metrics(end+1) = struct('name', baseName, 'psnr', psnrVal, 'ssim', ssimVal); %#ok<SAGROW>
+    nUse = min(MAX_PER_COND, numel(files));
+    fprintf('\n[demo] === %s (%s): procesando %d/%d imágenes ===\n', ...
+        condName, condCode, nUse, numel(files));
 
-    % Figura comparativa
-    fig = figure('Visible', 'off', 'Position', [100 100 1400 600]);
-    subplot(1,2,1); imshow(img);    title('Original', 'FontSize', 14);
-    subplot(1,2,2); imshow(imgOut); title('Preprocesada', 'FontSize', 14);
-    sgtitle(sprintf('%s  |  PSNR=%.2f dB  SSIM=%.3f', baseName, psnrVal, ssimVal), 'FontSize', 12);
+    condOutDir = fullfile(outDir, condCode);
+    if ~exist(condOutDir, 'dir'), mkdir(condOutDir); end
 
-    outPath = fullfile(outDir, sprintf('%s_comparacion.png', baseName));
-    exportgraphics(fig, outPath, 'Resolution', 150);
-    close(fig);
+    for k = 1:nUse
+        filePath = fullfile(files(k).folder, files(k).name);
+        [~, baseName, ~] = fileparts(files(k).name);
+
+        img = imread(filePath);
+        if size(img, 3) == 1, img = cat(3, img, img, img); end
+
+        fprintf('[demo] (%d/%d) %s ... ', k, nUse, files(k).name);
+        tic;
+        imgOut = pipeline_preproc(img);
+        t = toc;
+        fprintf('%.2fs\n', t);
+
+        imgRef  = im2double(img);
+        psnrVal = psnr(imgOut, imgRef);
+        ssimVal = ssim(imgOut, imgRef);
+        metrics(end+1) = struct('name', baseName, 'condition', condCode, ...
+                                'psnr', psnrVal, 'ssim', ssimVal); %#ok<SAGROW>
+
+        fig = figure('Visible', 'off', 'Position', [50 50 1400 550]);
+        subplot(1,2,1); imshow(img);    title('Original',     'FontSize', 13);
+        subplot(1,2,2); imshow(imgOut); title('Preprocesada', 'FontSize', 13);
+        sgtitle(sprintf('[%s] %s  |  PSNR=%.1f dB  SSIM=%.3f', ...
+            condCode, baseName, psnrVal, ssimVal), 'FontSize', 11, 'Interpreter', 'none');
+
+        outPath = fullfile(condOutDir, sprintf('%s_preproc.png', baseName));
+        exportgraphics(fig, outPath, 'Resolution', 120);
+        close(fig);
+    end
 end
 
 % ---------- Resumen ----------
-fprintf('\n========== Resumen ==========\n');
-fprintf('%-30s  %8s  %8s\n', 'Imagen', 'PSNR', 'SSIM');
+fprintf('\n========== RESUMEN PREPROCESAMIENTO ==========\n');
+fprintf('%-35s %-6s %8s %8s\n', 'Imagen', 'Cond.', 'PSNR(dB)', 'SSIM');
+fprintf('%s\n', repmat('-', 1, 62));
 for k = 1:numel(metrics)
-    fprintf('%-30s  %8.2f  %8.3f\n', metrics(k).name, metrics(k).psnr, metrics(k).ssim);
+    fprintf('%-35s %-6s %8.2f %8.3f\n', ...
+        metrics(k).name, metrics(k).condition, metrics(k).psnr, metrics(k).ssim);
 end
-fprintf('\nFiguras guardadas en: %s\n', outDir);
+fprintf('\nTotal procesadas: %d imágenes\n', numel(metrics));
+fprintf('Figuras guardadas en: %s\n', outDir);
