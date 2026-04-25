@@ -1,104 +1,124 @@
 function imgOut = pipeline_preproc(imgIn, opts)
-% PIPELINE_PREPROC  Preprocesamiento automático de imágenes de escritorio.
+% PIPELINE_PREPROC  Pipeline integrado de preprocesamiento para imágenes de escritorio.
 %
-%   imgOut = PIPELINE_PREPROC(imgIn) aplica el pipeline de preprocesamiento
-%   completo a una imagen RGB de entrada.
+%   Combina el enfoque del equipo (filtro bilateral + Laplaciano) con
+%   normalización de iluminación (CLAHE) y balance de blancos (gray-world).
 %
-%   imgOut = PIPELINE_PREPROC(imgIn, opts) permite sobrescribir parámetros.
+%   Pipeline completo (5 pasos):
+%     1. Normalización   → double [0,1]
+%     2. Bilateral       → denoising preservando bordes (Lab, edge-preserving)
+%     3. White balance   → corrige tinte de color según condición de luz
+%     4. CLAHE           → normaliza iluminación (útil en LL, RL, CSL)
+%     5. Laplaciano      → realce de bordes para facilitar detección
 %
 %   Entradas:
-%       imgIn : matriz HxWx3 uint8 o double (RGB)
-%       opts  : struct opcional con campos:
-%           .gaussianSigma   (default: 0.8)  — sigma para denoising suave
-%           .medianSize      (default: [3 3]) — kernel de mediana
-%           .claheClipLimit  (default: 0.005) — limit para CLAHE
-%           .claheTiles      (default: [8 8]) — grid de tiles CLAHE
-%           .whiteBalance    (default: true)  — aplicar gray-world WB
+%       imgIn : HxWx3 uint8 o double (RGB)
+%       opts  : struct opcional:
+%           .bilateralGS      (default: 15)    — sigma rango bilateral (Lab units)
+%           .bilateralSpatial (default: 5)     — sigma espacial bilateral (px)
+%           .whiteBalance     (default: true)  — gray-world WB
+%           .claheClipLimit   (default: 0.005) — clip limit CLAHE
+%           .claheTiles       (default: [8 8]) — tiles CLAHE
+%           .sharpenAlpha     (default: 0.3)   — intensidad Laplaciano (0=off)
 %
 %   Salida:
-%       imgOut : matriz HxWx3 double en rango [0, 1]
+%       imgOut : HxWx3 double [0,1]
 %
 %   Ejemplo:
-%       img = imread('dataset/raw/mixed/desk_001.jpg');
+%       img = imread('dataset/reference/NL/Small/Ft_01_NL (Small).jpg');
 %       out = pipeline_preproc(img);
 %       imshowpair(img, out, 'montage');
-%
-%   Justificación de cada paso: ver sección 2 del informe.
 
-    % ---------- Defaults ----------
-    if nargin < 2 || isempty(opts)
-        opts = struct();
-    end
+    if nargin < 2 || isempty(opts), opts = struct(); end
     defaults = struct( ...
-        'gaussianSigma',  0.8, ...
-        'medianSize',     [3 3], ...
+        'bilateralGS',      15, ...
+        'bilateralSpatial',  5, ...
+        'whiteBalance',   true, ...
         'claheClipLimit', 0.005, ...
         'claheTiles',     [8 8], ...
-        'whiteBalance',   true ...
+        'sharpenAlpha',    0.3  ...
     );
     opts = merge_opts(defaults, opts);
 
-    % ---------- 1. Normalización a double [0, 1] ----------
+    % ── 1. Normalización ──────────────────────────────────────────────────
     if isa(imgIn, 'uint8')
         img = im2double(imgIn);
     else
-        img = imgIn;
+        img = double(imgIn);
+        if max(img(:)) > 1, img = img / 255; end
     end
-    fprintf('[preproc] Input: %dx%dx%d, range [%.3f, %.3f]\n', ...
-        size(img,1), size(img,2), size(img,3), min(img(:)), max(img(:)));
+    img = max(0, min(1, img));
+    fprintf('[preproc] 1/5 Input: %dx%dx%d\n', size(img,1), size(img,2), size(img,3));
 
-    % ---------- 2. Denoise — mediana en cada canal (robusto contra sal/pimienta) ----------
-    img = cat(3, ...
-        medfilt2(img(:,:,1), opts.medianSize), ...
-        medfilt2(img(:,:,2), opts.medianSize), ...
-        medfilt2(img(:,:,3), opts.medianSize));
+    % ── 2. Bilateral (Lab) ────────────────────────────────────────────────
+    % Edge-preserving denoising en espacio Lab (preserva bordes de objetos)
+    % Reemplaza median+Gaussian con resultado de mayor calidad
+    lab = rgb2lab(img);
+    lab = imbilatfilt(lab, opts.bilateralGS, opts.bilateralSpatial);
+    img = lab2rgb(lab);
+    img = max(0, min(1, img));
+    fprintf('[preproc] 2/5 Bilateral OK\n');
 
-    % ---------- 3. Denoise suave — Gaussian (residual de ruido gaussiano) ----------
-    img = imgaussfilt(img, opts.gaussianSigma);
-
-    % ---------- 4. White balance gray-world (robustece contra tintes de iluminación) ----------
+    % ── 3. White balance (gray-world) ─────────────────────────────────────
+    % Corrige tinte de color: fundamental para CL (techo), LL (lámpara)
     if opts.whiteBalance
         img = gray_world_wb(img);
+        fprintf('[preproc] 3/5 White balance OK\n');
+    else
+        fprintf('[preproc] 3/5 White balance OFF\n');
     end
 
-    % ---------- 5. Normalización de iluminación — CLAHE en canal L de Lab ----------
+    % ── 4. CLAHE en L de Lab ─────────────────────────────────────────────
+    % Normaliza iluminación local: imprescindible para LL, RL, CSL
     lab = rgb2lab(img);
-    L = lab(:,:,1) / 100;   % Lab.L está en [0, 100], adaptamos a [0, 1]
-    L = adapthisteq(L, ...
-        'ClipLimit',   opts.claheClipLimit, ...
-        'NumTiles',    opts.claheTiles, ...
-        'Distribution','uniform');
+    L   = lab(:,:,1) / 100;
+    L   = adapthisteq(L, ...
+            'ClipLimit',    opts.claheClipLimit, ...
+            'NumTiles',     opts.claheTiles, ...
+            'Distribution', 'uniform');
     lab(:,:,1) = L * 100;
     img = lab2rgb(lab);
-
-    % Clamp por seguridad
     img = max(0, min(1, img));
+    fprintf('[preproc] 4/5 CLAHE OK\n');
+
+    % ── 5. Realce Laplaciano (sharpening) ────────────────────────────────
+    % Refuerza bordes de objetos: mejora contraste para detección Canny
+    if opts.sharpenAlpha > 0
+        filtro = fspecial('laplacian', 0.2);
+        for ch = 1:3
+            canal    = img(:,:,ch);
+            lap      = imfilter(canal, filtro, 'replicate');
+            img(:,:,ch) = canal - opts.sharpenAlpha * lap;
+        end
+        img = max(0, min(1, img));
+        fprintf('[preproc] 5/5 Laplaciano OK (alpha=%.2f)\n', opts.sharpenAlpha);
+    else
+        fprintf('[preproc] 5/5 Laplaciano OFF\n');
+    end
 
     imgOut = img;
     fprintf('[preproc] Output: range [%.3f, %.3f]\n', min(imgOut(:)), max(imgOut(:)));
 end
 
 
-% ============================================================
-% Helpers
-% ============================================================
+% ═══════════════════════════════════════════════════════════════════════════
+% Helpers locales
+% ═══════════════════════════════════════════════════════════════════════════
 
 function out = gray_world_wb(img)
-%GRAY_WORLD_WB  Balance de blancos por asunción de mundo gris.
-%   Asume que el promedio de color de la escena debería ser gris neutro.
+% GRAY_WORLD_WB  Balance de blancos asunción mundo gris.
     r = img(:,:,1); g = img(:,:,2); b = img(:,:,3);
     meanR = mean(r(:)); meanG = mean(g(:)); meanB = mean(b(:));
     meanAll = (meanR + meanG + meanB) / 3;
-    r = r * (meanAll / max(meanR, eps));
-    g = g * (meanAll / max(meanG, eps));
-    b = b * (meanAll / max(meanB, eps));
-    out = cat(3, r, g, b);
+    out = cat(3, ...
+        r * (meanAll / max(meanR, eps)), ...
+        g * (meanAll / max(meanG, eps)), ...
+        b * (meanAll / max(meanB, eps)));
     out = max(0, min(1, out));
 end
 
-
 function merged = merge_opts(defaults, user)
-%MERGE_OPTS  Sobreescribe defaults con campos provistos por el usuario.
+% MERGE_OPTS  Combina struct de defaults con overrides del usuario.
     merged = defaults;
     fields = fieldnames(user);
     for k = 1:numel(fields)
