@@ -51,21 +51,21 @@ for i = 1:size(casos, 1)
     lap   = f_laplaciano(step4, 0.2);                    % 5. Laplaciano
     step5 = max(0, min(1, step4 - 0.3 * lap));
 
-    % ── Figura A: montage 5 pasos ─────────────────────────────────────────
-    fig = figure('Visible','off','Position',[50 50 1600 380]);
+    % ── Figura A: 5 imagenes separadas (una por paso) ────────────────────
     pasos  = {step1, step2, step3, step4, step5};
-    labels = {'1. Original','2. Bilateral','3. White Balance','4. CLAHE','5. Laplaciano'};
+    labels = {'1_original','2_bilateral','3_whitebalance','4_clahe','5_laplaciano'};
+    titulos = {'Paso 1: Original', 'Paso 2: Filtro Bilateral (preserva bordes)', ...
+               'Paso 3: White Balance (gray-world)', ...
+               'Paso 4: CLAHE sobre canal L', 'Paso 5: Realce Laplaciano'};
     for k = 1:5
-        subplot(1,5,k);
+        fig = figure('Visible','off','Position',[50 50 900 480]);
         imshow(pasos{k});
-        title(labels{k}, 'FontSize',10, 'FontWeight','bold');
+        title(titulos{k}, 'FontSize',12, 'FontWeight','bold');
+        exportgraphics(fig, fullfile(outDir, sprintf('step_%s_%s.png', labels{k}, condCode)), ...
+            'Resolution', 150);
+        close(fig);
+        fprintf('  [OK] step_%s_%s.png\n', labels{k}, condCode);
     end
-    sgtitle(sprintf('Pipeline de preprocesamiento — condición %s', condCode), ...
-        'FontSize',13, 'FontWeight','bold');
-    exportgraphics(fig, fullfile(outDir, sprintf('pipeline_steps_%s.png', condCode)), ...
-        'Resolution', 150);
-    close(fig);
-    fprintf('  [OK] pipeline_steps_%s.png\n', condCode);
 
     % ── Figura B: antes/despues con metricas ─────────────────────────────
     psnr_val = psnr(step5, step1);

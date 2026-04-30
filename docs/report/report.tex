@@ -106,26 +106,19 @@ heterogéneas, reportando PSNR y SSIM como medida del grado de modificación apl
 \section{Introducción}
 \label{sec:intro}
 
-El enunciado del proyecto exige, como paso previo a la detección y reconocimiento
-de objetos sobre un escritorio, un algoritmo de preprocesamiento que:
-\begin{enumerate}
-    \item Elimine ruidos y manchas presentes en la imagen capturada.
-    \item Modifique las intensidades para favorecer la detección posterior.
-    \item Incluya cualquier paso adicional que se considere necesario, debidamente justificado.
-    \item Sea \textbf{completamente automático}: la entrada es una imagen y el proceso
-          no debe requerir ajuste de parámetros caso por caso.
-\end{enumerate}
+Las imágenes de escritorio capturadas con dispositivos móviles presentan tres
+desafíos principales antes de cualquier etapa de detección: ruido de sensor,
+dominantes cromáticas producidas por la fuente de iluminación, e irregularidades
+de intensidad causadas por gradientes de luz no uniformes. Un sistema de visión
+robusto debe corregir estos problemas de forma completamente automática, sin
+ajuste manual por imagen.
 
-La dificultad principal de este requisito de automatización es que las imágenes se
-toman bajo condiciones no controladas: iluminación de intensidad y temperatura de color
-variables, ángulos y distancias arbitrarias, ruido dependiente del sensor de cada
-dispositivo. Cualquier paso del pipeline debe, por tanto, adaptarse al contenido
-observado en lugar de depender de un ajuste global.
-
-La solución propuesta se implementa en la función
-\lstinline{pipeline_preproc.m} (ver
-\lstinline{src/preprocessing/pipeline_preproc.m}) y se organiza en cinco etapas
-secuenciales descritas en la Sección~\ref{sec:pipeline}.
+Se propone un pipeline de cinco etapas secuenciales que ataca cada desafío en
+orden lógico: filtrado bilateral para remover ruido preservando los bordes de
+los objetos, balance de blancos para corregir el tinte de color, ecualización
+adaptativa del histograma para normalizar la iluminación, y realce Laplaciano
+para preparar los bordes para la detección posterior. Cada operador se
+auto-adapta al contenido de la imagen, sin requerir parámetros por imagen.
 
 % ============================================================
 \section{Metodología}
@@ -152,27 +145,44 @@ El pipeline sigue el orden que se resume en la Tabla~\ref{tab:pipeline}.
 \end{tabular}
 \end{table}
 
-La Figura~\ref{fig:pasos_NL} y la Figura~\ref{fig:pasos_CSL} muestran el efecto
-acumulado de cada etapa sobre imágenes representativas del dataset.
+Las figuras siguientes muestran el efecto acumulado de cada etapa sobre una imagen
+representativa de luz natural (NL) y una de iluminación combinada (CSL).
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\linewidth]{../../results/figures/report/parte1/pipeline_steps_NL.png}
-\caption{Cinco etapas del pipeline sobre una imagen de luz natural (NL). El cambio
-visual es moderado porque la imagen ya está bien iluminada.}
-\label{fig:pasos_NL}
+\includegraphics[width=0.82\linewidth]{../../results/figures/report/parte1/step_1_original_NL.png}
+\caption{Paso 1 — Imagen original (NL). Entrada directa del sensor, en double $[0,1]$.}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\linewidth]{../../results/figures/report/parte1/pipeline_steps_CSL.png}
-\caption{Cinco etapas del pipeline sobre una imagen con iluminación combinada (CSL).
-El CLAHE normaliza zonas de sombra y luz simultáneamente; el Laplaciano realza bordes
-de objetos para facilitar la detección.}
-\label{fig:pasos_CSL}
+\includegraphics[width=0.82\linewidth]{../../results/figures/report/parte1/step_2_bilateral_NL.png}
+\caption{Paso 2 — Tras filtro bilateral ($\sigma_r=15$, $\sigma_s=5$). El ruido de
+alta frecuencia se elimina preservando los bordes de los objetos.}
 \end{figure}
 
-El orden no es arbitrario: se justifica explícitamente en la Sección~\ref{sec:orden}.
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{../../results/figures/report/parte1/step_3_whitebalance_NL.png}
+\caption{Paso 3 — Tras white balance gray-world. El tinte cromático se neutraliza;
+los canales R, G, B convergen hacia la misma media.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{../../results/figures/report/parte1/step_4_clahe_NL.png}
+\caption{Paso 4 — Tras CLAHE sobre canal $L$ (clip\,=\,0.005, tiles $8\times8$).
+El contraste local se normaliza sin alterar la cromaticidad.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\linewidth]{../../results/figures/report/parte1/step_5_laplaciano_NL.png}
+\caption{Paso 5 — Tras realce Laplaciano ($\alpha=0.3$). Los bordes de lápices,
+bolígrafos y marcadores quedan reforzados para la detección Canny posterior.}
+\end{figure}
+
+El orden no es arbitrario: se justifica en la Sección~\ref{sec:orden}.
 
 % ----------------------------------------------------------
 \subsection{Etapa 1 — Normalización a \texttt{double} en \([0,1]\)}
