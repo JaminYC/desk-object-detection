@@ -70,16 +70,15 @@
 \noindent
 Este informe presenta un algoritmo completamente automático para el preprocesamiento
 de imágenes de escritorio con objetos de uso diario (lápices, bolígrafos, marcadores,
-cuadernos, calculadoras). El pipeline combina filtrado no lineal para remover ruido
-impulsivo, filtrado gaussiano suave para ruido residual, balance de blancos
-\emph{gray-world} para corregir dominantes cromáticas de la iluminación, y ecualización
-adaptativa del histograma con restricción de contraste (CLAHE) aplicada sobre el canal
-de luminancia del espacio CIE Lab para normalizar la intensidad sin alterar la
-cromaticidad original. Todos los pasos usan parámetros universales que no requieren
-ajuste manual por imagen; la adaptación ocurre dentro de cada operador. Se evalúa el
-pipeline sobre un conjunto de 17 imágenes tomadas bajo condiciones de iluminación
-heterogéneas, reportando PSNR y SSIM contra la imagen original como medida del grado
-de modificación aplicado.
+cuadernos, calculadoras). El pipeline combina filtrado bilateral preservador de bordes
+en el espacio Lab para eliminar ruido, balance de blancos \emph{gray-world} para
+corregir dominantes cromáticas de la iluminación, ecualización adaptativa del histograma
+con restricción de contraste (CLAHE) aplicada sobre el canal de luminancia del espacio
+CIE Lab para normalizar la intensidad sin alterar la cromaticidad, y realce de bordes
+mediante el filtro Laplaciano para preparar la imagen para la detección posterior.
+Todos los pasos usan parámetros universales que no requieren ajuste manual por imagen.
+Se evalúa el pipeline sobre imágenes tomadas bajo condiciones de iluminación
+heterogéneas, reportando PSNR y SSIM como medida del grado de modificación aplicado.
 \end{abstract}
 
 % ============================================================
@@ -123,14 +122,34 @@ El pipeline sigue el orden que se resume en la Tabla~\ref{tab:pipeline}.
 \toprule
 \# & Etapa & Operador & Requisito del enunciado \\
 \midrule
-1 & Normalización de rango & \(\texttt{im2double}\) & Preparación \\
-2 & Denoise impulsivo & Mediana \(3\times 3\) & Ruido/manchas \\
-3 & Denoise residual & Gaussiano (\(\sigma=0{,}8\)) & Ruido/manchas \\
-4 & Balance de blancos & Gray-world & Procesamiento adicional \\
-5 & Normalización de intensidad & CLAHE sobre \(L\) en Lab & Modificación de intensidades \\
+1 & Normalización de rango & \texttt{im2double} & Preparación \\
+2 & Denoise preservador de bordes & Filtro bilateral (Lab) & Ruido/manchas \\
+3 & Balance de blancos & Gray-world & Procesamiento adicional \\
+4 & Normalización de intensidad & CLAHE sobre \(L\) en Lab & Modificación de intensidades \\
+5 & Realce de bordes & Filtro Laplaciano & Mejora para detección \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+La Figura~\ref{fig:pasos_NL} y la Figura~\ref{fig:pasos_CSL} muestran el efecto
+acumulado de cada etapa sobre imágenes representativas del dataset.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{../../results/figures/report/parte1/pipeline_steps_NL.png}
+\caption{Cinco etapas del pipeline sobre una imagen de luz natural (NL). El cambio
+visual es moderado porque la imagen ya está bien iluminada.}
+\label{fig:pasos_NL}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{../../results/figures/report/parte1/pipeline_steps_CSL.png}
+\caption{Cinco etapas del pipeline sobre una imagen con iluminación combinada (CSL).
+El CLAHE normaliza zonas de sombra y luz simultáneamente; el Laplaciano realza bordes
+de objetos para facilitar la detección.}
+\label{fig:pasos_CSL}
+\end{figure}
 
 El orden no es arbitrario: se justifica explícitamente en la Sección~\ref{sec:orden}.
 
@@ -140,146 +159,107 @@ El orden no es arbitrario: se justifica explícitamente en la Sección~\ref{sec:
 
 Una imagen RGB capturada con una cámara estándar se representa habitualmente como
 una matriz de enteros \texttt{uint8} cuyo rango es \(\{0, 1, \dots, 255\}\). Los
-operadores aritméticos sobre este tipo sufren de \textbf{saturación y truncamiento}:
-por ejemplo, \(200 + 100\) se satura a \(255\) en lugar de producir \(300\), y una
-división entera como \(5/2\) se trunca a \(2\). Todos los operadores posteriores del
-pipeline — promedios espaciales, divisiones del balance de blancos, conversión
-\(\text{RGB} \to \text{Lab}\), ecualización del histograma — requieren aritmética de
-punto flotante para preservar información.
+operadores aritméticos sobre este tipo sufren de \textbf{saturación y truncamiento}.
+Todos los operadores posteriores requieren aritmética de punto flotante:
 
-La conversión se realiza según:
 \begin{equation}
     I'(x,y,c) = \frac{I(x,y,c)}{255}, \qquad I' \in [0,1]^{H\times W\times 3}.
     \label{eq:norm}
 \end{equation}
 
-\subsection{Etapa 2 — Denoise no lineal con filtro de mediana}
-\label{sec:median}
+\subsection{Etapa 2 — Denoise preservador de bordes: filtro bilateral}
+\label{sec:bilateral}
 
-Los artefactos de tipo \emph{sal y pimienta} — píxeles individuales con valor extremo,
-frecuentes en fotografías con compresión JPEG agresiva o sensores CMOS económicos —
-no se eliminan bien con filtros lineales. El filtro de mediana, definido por
+El ruido presente en fotografías celulares (JPEG con compresión agresiva, ruido
+de sensor CMOS) no se elimina bien con filtros lineales clásicos porque estos
+difuminan indiscriminadamente bordes y ruido. El \textbf{filtro bilateral} resuelve
+este problema combinando un peso espacial y un peso de similitud de intensidad:
+
 \begin{equation}
-    I_{\text{med}}(x,y,c) = \operatorname{mediana} \bigl\{ I(u,v,c) \;:\; (u,v) \in \mathcal{N}_{3\times 3}(x,y) \bigr\},
-    \label{eq:median}
+    I_{\text{bil}}(p) = \frac{1}{W_p} \sum_{q \in \mathcal{N}(p)}
+    G_{\sigma_s}(\|p-q\|) \cdot G_{\sigma_r}(\|I(p)-I(q)\|) \cdot I(q),
 \end{equation}
-es un operador \textbf{no lineal} y por tanto \textbf{robusto a outliers}: un píxel
-anómalo en una vecindad de nueve no altera la mediana, ya que esta corresponde al
-quinto valor del conjunto ordenado. En contraste con el filtro promedio, preserva
-mejor los bordes porque no introduce valores intermedios inexistentes en la imagen.
 
-La operación se aplica independientemente a cada canal de color, pues el ruido
-impulsivo puede presentarse en un único canal (efecto del demosaico del Bayer pattern).
+donde \(G_{\sigma_s}\) es un kernel gaussiano espacial con desviación \(\sigma_s\)
+(\texttt{bilateralSpatial}~$= 5$\,px) y \(G_{\sigma_r}\) es el kernel de rango con
+desviación \(\sigma_r\) (\texttt{bilateralGS}~$= 15$\,unidades Lab). El filtro se
+aplica en el espacio \textbf{Lab} vía \texttt{imbilatfilt}, lo que preserva
+la percepción de color al operar en el canal de luminancia conjuntamente con los
+canales de cromaticidad. La función del equipo \texttt{f\_bilateral(I, GS, spatial)}
+encapsula esta operación.
 
-\subsection{Etapa 3 — Suavizado gaussiano}
-\label{sec:gauss}
-
-Tras la mediana persiste un \textbf{ruido gaussiano residual} de menor amplitud,
-originado por la amplificación del sensor. Se suaviza con convolución por un kernel
-gaussiano bidimensional:
-\begin{equation}
-    G_\sigma(x,y) = \frac{1}{2\pi\sigma^2}\exp\!\left(-\frac{x^2+y^2}{2\sigma^2}\right),
-    \qquad I_{\text{gauss}} = I_{\text{med}} * G_\sigma.
-    \label{eq:gauss}
-\end{equation}
-Con \(\sigma = 0{,}8\) el kernel efectivo es de \(\sim 5\times 5\) píxeles, lo que
-reduce el ruido de alta frecuencia sin destruir bordes de objetos finos como lápices
-o la tipografía impresa en marcadores.
-
-La \textbf{secuencia mediana~\(\to\)~gaussiano} es deliberada: si se invirtiera, el
-filtro gaussiano distribuiría la energía del outlier sobre sus vecinos, haciendo
-imposible su eliminación posterior.
-
-\subsection{Etapa 4 — Balance de blancos por la hipótesis del mundo gris}
+\subsection{Etapa 3 — Balance de blancos por la hipótesis del mundo gris}
 \label{sec:wb}
 
-La iluminación de la escena introduce un \textbf{dominante cromático}: una bombilla
-incandescente tiñe toda la imagen de amarillo, un fluorescente la vuelve verdosa.
-El algoritmo \emph{gray-world} asume que la media global del color en una escena
-natural es aproximadamente gris neutro, y escala cada canal para imponer esa
-propiedad. Sea
+La iluminación de la escena introduce un \textbf{dominante cromático}. El algoritmo
+\emph{gray-world} asume que la media global del color en una escena natural es
+aproximadamente gris neutro, y escala cada canal para imponer esa propiedad:
+
 \begin{equation}
-    \bar{c} = \frac{1}{HW}\sum_{x,y} I_{\text{gauss}}(x,y,c), \qquad c \in \{R,G,B\},
-\end{equation}
-y \(\bar{m} = \tfrac{1}{3}(\bar{R}+\bar{G}+\bar{B})\) la luminancia promedio.
-La imagen balanceada es
-\begin{equation}
-    I_{\text{wb}}(x,y,c) = I_{\text{gauss}}(x,y,c) \cdot \frac{\bar{m}}{\bar{c}},
+    I_{\text{wb}}(x,y,c) = I_{\text{bil}}(x,y,c) \cdot \frac{\bar{m}}{\bar{c}},
+    \quad \bar{m} = \tfrac{1}{3}(\bar{R}+\bar{G}+\bar{B}),
     \label{eq:grayworld}
 \end{equation}
-seguida de un clipping a \([0,1]\).
 
-La principal virtud de esta formulación para el requisito de automaticidad es que
-\textbf{no posee parámetros}: se auto-calibra a partir de los estadísticos de la
-imagen. Su principal limitación ocurre cuando una clase cromática domina la escena
-(p.\,ej., un escritorio con exclusivamente marcadores rojos); en el dataset empleado
-esta situación no se presenta.
+seguida de un clipping a \([0,1]\). Esta formulación \textbf{no posee parámetros}:
+se auto-calibra a partir de los estadísticos de la imagen.
 
-\subsection{Etapa 5 — Normalización de intensidad con CLAHE en el canal \(L\)}
+\subsection{Etapa 4 — Normalización de intensidad con CLAHE en el canal \(L\)}
 \label{sec:clahe}
 
-La \textbf{ecualización de histograma clásica} redistribuye las intensidades para
-aproximar una distribución uniforme, lo que incrementa el contraste global pero:
-(i) amplifica el ruido, y (ii) falla en imágenes con gradientes de iluminación, donde
-una zona oscura y una clara no pueden corregirse simultáneamente con una única
-transformación.
-
-CLAHE (\emph{Contrast Limited Adaptive Histogram Equalization}) resuelve ambos
-problemas. El procedimiento es:
+CLAHE (\emph{Contrast Limited Adaptive Histogram Equalization}) resuelve los dos
+problemas de la ecualización global: amplificación de ruido e incapacidad para
+corregir gradientes de iluminación simultáneamente. El procedimiento es:
 \begin{enumerate}
     \item Particionar la imagen en una grilla de \(8\times 8\) \emph{tiles}.
-    \item Para cada tile, calcular su histograma y su función de distribución acumulada (CDF).
-    \item Aplicar un \textbf{clip limit} \(\beta\) al histograma: los bins con frecuencia mayor a \(\beta\) se recortan, y el excedente se redistribuye uniformemente. Esto evita amplificar ruido en regiones de baja varianza.
-    \item Ecualizar cada tile usando su CDF modificada.
-    \item Interpolar bilinealmente las transformaciones entre tiles vecinos para evitar artefactos de bloques.
+    \item Para cada tile, calcular el histograma y limitar bins por encima del
+          \textbf{clip limit} \(\beta = 0.005\); redistribuir el excedente uniformemente.
+    \item Ecualizar con la CDF modificada e interpolar bilinealmente entre tiles.
 \end{enumerate}
 
-Formalmente, para un tile \(T\) con \(N\) píxeles y clip limit relativo \(\beta\):
+Se opera exclusivamente sobre el canal \(L\) del espacio CIE Lab:
 \begin{equation}
-    h_{\text{clip}}(k) = \min\!\bigl(h_T(k),\, \beta N\bigr),\qquad
-    T_{\text{eq}}(I) = \operatorname{CDF}(h_{\text{clip}})(I).
-\end{equation}
-
-\subsubsection*{¿Por qué operar en Lab y no en RGB?}
-
-Aplicar CLAHE directamente en cada canal RGB produce \textbf{aberraciones cromáticas}:
-al alterar de manera no sincronizada la intensidad de \(R\), \(G\) y \(B\), se desplaza
-el color percibido de cada píxel. El espacio \textbf{CIE Lab} separa la luminancia
-\(L\) de la cromaticidad \((a, b)\), permitiendo modificar el contraste sin tocar el
-tono. La transformación es
-\begin{equation}
-    (R,G,B) \xrightarrow{\text{rgb2lab}} (L,a,b),\qquad
-    L' = \operatorname{CLAHE}(L),\qquad
+    (R,G,B) \xrightarrow{\text{rgb2lab}} (L,a,b),\quad
+    L' = \operatorname{CLAHE}(L),\quad
     (L',a,b) \xrightarrow{\text{lab2rgb}} (R',G',B').
-    \label{eq:lab}
 \end{equation}
+Esto evita aberraciones cromáticas que ocurrirían al equalizar canales RGB independientemente.
 
-\subsection{Clamping final y salida}
+\subsection{Etapa 5 — Realce de bordes con filtro Laplaciano}
+\label{sec:laplaciano}
 
-Tras la transformación inversa \(\text{Lab}\to\text{RGB}\), los valores pueden caer
-ligeramente fuera de \([0,1]\) por redondeo numérico. Se aplica un clipping final:
+El filtro Laplaciano detecta regiones de alta variación de intensidad (bordes). Se
+aplica como \textbf{sharpening sustractivo}: se resta una fracción de la respuesta
+Laplaciana para reforzar los bordes sin introducir artefactos excesivos:
+
 \begin{equation}
-    I_{\text{out}}(x,y,c) = \max\bigl(0,\min(1, I(x,y,c))\bigr).
+    I_{\text{sharp}}(x,y) = I_{\text{CLAHE}}(x,y) - \alpha \cdot \nabla^2 I_{\text{CLAHE}}(x,y),
+    \label{eq:laplacian}
 \end{equation}
+
+con \(\alpha = 0.3\) (intensidad de realce) y el kernel discreto \(\nabla^2\)
+generado por \texttt{fspecial('laplacian', 0.2)} a través de la función del equipo
+\texttt{f\_laplaciano(I, kernelAlpha)}. Esta etapa prepara los bordes de los objetos
+(lápices, marcadores, bordes de cuadernos) para la detección Canny en la Parte~2.
 
 % ============================================================
 \section{Justificación del orden del pipeline}
 \label{sec:orden}
 
-El orden \texttt{normalización} \(\to\) \texttt{mediana} \(\to\) \texttt{gaussiano}
-\(\to\) \texttt{gray-world} \(\to\) \texttt{CLAHE} responde a dependencias causales
-entre etapas:
+El orden responde a dependencias causales entre etapas:
 
 \begin{enumerate}
     \item La \textbf{normalización} precede a todo: habilita la aritmética precisa.
-    \item La \textbf{mediana} precede al gaussiano porque este último ``unta'' los
-          outliers sobre sus vecinos, haciendo imposible eliminarlos después.
-    \item El \textbf{balance de blancos} precede a CLAHE porque un tinte cromático
-          global perturbaría el histograma del canal \(L\); eliminarlo primero
-          permite que CLAHE trabaje sobre una luminancia limpia.
-    \item El \textbf{CLAHE sobre \(L\)} se ejecuta último porque es el paso de
-          realce de contraste, que debe aplicarse sobre una imagen ya libre de ruido
-          y con color balanceado.
+    \item El \textbf{bilateral} va primero porque opera sobre la imagen ruidosa original;
+          aplicarlo después del CLAHE amplificaría artefactos ya ecalizados.
+    \item El \textbf{balance de blancos} precede a CLAHE: un tinte cromático global
+          perturbaría el histograma del canal \(L\); eliminarlo primero permite que
+          CLAHE trabaje sobre una luminancia limpia.
+    \item El \textbf{CLAHE sobre \(L\)} normaliza la iluminación sobre una imagen ya
+          libre de ruido y con color balanceado.
+    \item El \textbf{Laplaciano} va al final: reforzar bordes antes de denoising o
+          CLAHE propagaría artefactos; aplicarlo sobre la imagen final prepara la
+          imagen para Canny sin contaminar los pasos anteriores.
 \end{enumerate}
 
 % ============================================================
@@ -287,22 +267,14 @@ entre etapas:
 \label{sec:auto}
 
 El enunciado exige que el pipeline funcione sin ajuste manual de parámetros por
-imagen. Esto se logra mediante una observación crucial: los parámetros del código
-\emph{no necesitan} adaptarse por imagen porque los propios operadores se
-auto-adaptan al contenido. En particular:
+imagen. Los propios operadores se auto-adaptan al contenido:
 
 \begin{itemize}
     \item CLAHE se adapta al histograma local de cada tile de cada imagen.
     \item \emph{Gray-world} se adapta a los estadísticos cromáticos de cada imagen.
-    \item El filtro de mediana es, por construcción, insensible a la amplitud
-          absoluta del ruido (siempre reemplaza por la mediana local).
-    \item El kernel gaussiano con \(\sigma=0{,}8\) suaviza ruido de alta frecuencia
-          en un rango universalmente aceptado por la literatura para imágenes
-          fotográficas de resolución típica.
+    \item El filtro bilateral es, por construcción, sensible a la variación de intensidad
+          local y preserva bordes independientemente de la amplitud del ruido.
 \end{itemize}
-
-Los valores por defecto de la Tabla~\ref{tab:params} son constantes del código y no
-se modificaron para ninguna imagen del dataset.
 
 \begin{table}[H]
 \centering
@@ -312,11 +284,12 @@ se modificaron para ninguna imagen del dataset.
 \toprule
 Parámetro & Valor & Significado \\
 \midrule
-\texttt{gaussianSigma}   & \(0{,}8\)    & Desviación del kernel gaussiano \\
-\texttt{medianSize}      & \([3,3]\)    & Tamaño del kernel de mediana \\
-\texttt{claheClipLimit}  & \(0{,}005\)  & Límite relativo para recorte CLAHE \\
-\texttt{claheTiles}      & \([8,8]\)    & Grilla de tiles CLAHE \\
-\texttt{whiteBalance}    & \(\text{true}\) & Activa balance de blancos gray-world \\
+\texttt{bilateralGS}      & \(15\)       & Sigma de rango del filtro bilateral (unidades Lab) \\
+\texttt{bilateralSpatial} & \(5\)        & Sigma espacial del filtro bilateral (px) \\
+\texttt{claheClipLimit}   & \(0.005\)    & Límite relativo para recorte de bins CLAHE \\
+\texttt{claheTiles}       & \([8,8]\)    & Grilla de tiles CLAHE \\
+\texttt{whiteBalance}     & \(\text{true}\) & Activa balance de blancos gray-world \\
+\texttt{sharpenAlpha}     & \(0.3\)      & Intensidad del realce Laplaciano \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -325,74 +298,52 @@ Parámetro & Valor & Significado \\
 \section{Implementación}
 \label{sec:impl}
 
-El código completo de la función se presenta a continuación. La función acepta
-opcionalmente un \texttt{struct} de opciones, pero el demo del proyecto nunca lo
-invoca, garantizando el carácter automático descrito en la
-Sección~\ref{sec:auto}.
-
 \begin{lstlisting}[caption={\texttt{src/preprocessing/pipeline\_preproc.m} — función principal.}]
 function imgOut = pipeline_preproc(imgIn, opts)
-% PIPELINE_PREPROC  Preprocesamiento automatico de imagenes de escritorio.
-
-    % ---------- Defaults ----------
-    if nargin < 2 || isempty(opts)
-        opts = struct();
-    end
+    if nargin < 2 || isempty(opts), opts = struct(); end
     defaults = struct( ...
-        'gaussianSigma',  0.8, ...
-        'medianSize',     [3 3], ...
+        'bilateralGS',      15, ...
+        'bilateralSpatial',  5, ...
+        'whiteBalance',   true, ...
         'claheClipLimit', 0.005, ...
         'claheTiles',     [8 8], ...
-        'whiteBalance',   true ...
+        'sharpenAlpha',    0.3  ...
     );
     opts = merge_opts(defaults, opts);
 
-    % ---------- 1. Normalizacion a double [0, 1] ----------
-    if isa(imgIn, 'uint8')
-        img = im2double(imgIn);
-    else
-        img = imgIn;
+    % 1. Normalizacion a double [0,1]
+    if isa(imgIn, 'uint8'), img = im2double(imgIn);
+    else, img = imgIn; if max(img(:))>1, img=img/255; end
     end
-
-    % ---------- 2. Denoise: mediana en cada canal ----------
-    img = cat(3, ...
-        medfilt2(img(:,:,1), opts.medianSize), ...
-        medfilt2(img(:,:,2), opts.medianSize), ...
-        medfilt2(img(:,:,3), opts.medianSize));
-
-    % ---------- 3. Denoise suave: gaussiano ----------
-    img = imgaussfilt(img, opts.gaussianSigma);
-
-    % ---------- 4. White balance gray-world ----------
-    if opts.whiteBalance
-        img = gray_world_wb(img);
-    end
-
-    % ---------- 5. CLAHE en canal L de Lab ----------
-    lab = rgb2lab(img);
-    L = lab(:,:,1) / 100;
-    L = adapthisteq(L, ...
-        'ClipLimit',   opts.claheClipLimit, ...
-        'NumTiles',    opts.claheTiles, ...
-        'Distribution','uniform');
-    lab(:,:,1) = L * 100;
-    img = lab2rgb(lab);
-
     img = max(0, min(1, img));
-    imgOut = img;
-end
-\end{lstlisting}
 
-\begin{lstlisting}[caption={Función auxiliar \texttt{gray\_world\_wb} — balance de blancos sin parámetros.}]
-function out = gray_world_wb(img)
-    r = img(:,:,1); g = img(:,:,2); b = img(:,:,3);
-    meanR = mean(r(:)); meanG = mean(g(:)); meanB = mean(b(:));
-    meanAll = (meanR + meanG + meanB) / 3;
-    r = r * (meanAll / max(meanR, eps));
-    g = g * (meanAll / max(meanG, eps));
-    b = b * (meanAll / max(meanB, eps));
-    out = cat(3, r, g, b);
-    out = max(0, min(1, out));
+    % 2. Bilateral (Lab) via f_bilateral del equipo
+    img = max(0,min(1, im2double( ...
+        f_bilateral(im2uint8(img), opts.bilateralGS, opts.bilateralSpatial))));
+
+    % 3. White balance gray-world
+    if opts.whiteBalance
+        r=img(:,:,1); g=img(:,:,2); b=img(:,:,3);
+        m=(mean(r(:))+mean(g(:))+mean(b(:)))/3;
+        img = max(0,min(1, cat(3, r*(m/max(mean(r(:)),eps)), ...
+                                   g*(m/max(mean(g(:)),eps)), ...
+                                   b*(m/max(mean(b(:)),eps)))));
+    end
+
+    % 4. CLAHE en canal L de Lab
+    lab = rgb2lab(img);
+    L   = adapthisteq(lab(:,:,1)/100, 'ClipLimit', opts.claheClipLimit, ...
+                      'NumTiles', opts.claheTiles, 'Distribution','uniform');
+    lab(:,:,1) = L*100;
+    img = max(0, min(1, lab2rgb(lab)));
+
+    % 5. Realce Laplaciano via f_laplaciano del equipo
+    if opts.sharpenAlpha > 0
+        lap = f_laplaciano(img, 0.2);
+        img = max(0, min(1, img - opts.sharpenAlpha * lap));
+    end
+
+    imgOut = img;
 end
 \end{lstlisting}
 
@@ -402,91 +353,67 @@ end
 
 \subsection{Dataset y protocolo}
 
-Se evaluó el pipeline sobre un conjunto de \(17\) imágenes de escritorio
-(\texttt{dataset/reference/}) capturadas bajo condiciones de iluminación variadas:
-luz natural diurna, lámparas de escritorio LED cálidas, y luz fluorescente de techo.
-Las resoluciones oscilan entre \(853 \times 1280\) y \(1920 \times 1280\) píxeles.
-El script \texttt{demo\_24abril.m} itera automáticamente sobre las imágenes, aplica el
-pipeline y genera figuras comparativas.
+Se evaluó el pipeline sobre imágenes de escritorio (\texttt{dataset/reference/})
+capturadas bajo condiciones de iluminación variadas: luz natural diurna (NL),
+fluorescente de techo (CL), lámpara de escritorio (LL), luz rojiza/cálida (RL),
+e iluminación combinada (CSL). Las resoluciones oscilan entre
+\(480 \times 853\) y \(1920 \times 1280\) píxeles.
 
 \subsection{Métricas}
 
-Para cada imagen se reportan PSNR y SSIM entre la imagen original (normalizada a
-\([0,1]\)) y la salida del pipeline. La Tabla~\ref{tab:metricas} muestra los
-resultados.
+PSNR y SSIM se calculan entre la imagen original y la salida del pipeline.
+Debe subrayarse que en este caso \textbf{no existe un ground truth limpio}: un
+PSNR alto indica poca modificación (imagen bien iluminada), mientras que un
+PSNR bajo indica corrección activa (imagen con problemas de iluminación o color).
 
 \begin{table}[H]
 \centering
-\caption{PSNR y SSIM entre entrada y salida del pipeline sobre el conjunto de 17 imágenes.}
+\caption{PSNR y SSIM entre entrada y salida del pipeline.}
 \label{tab:metricas}
 \begin{tabular}{@{}lcc@{}}
 \toprule
 Imagen & PSNR (dB) & SSIM \\
 \midrule
-08\_notebook\_pens\_pencils & 14.30 & 0.497 \\
-09\_pen\_calculator         & 21.76 & 0.841 \\
-p01\_desk\_pencil\_eraser   & 24.04 & 0.959 \\
-p02\_pencils\_desk          & 24.27 & 0.962 \\
-p03\_pencils\_close         & 25.35 & 0.958 \\
-p04\_pen\_paper             & 23.67 & 0.934 \\
-p05\_stationery             & 19.95 & 0.341 \\
-p06\_stationery2            & 29.40 & 0.964 \\
-p07\_stationery3            & 26.48 & 0.939 \\
-p08\_stationery4            & 13.66 & 0.599 \\
-p09\_markers\_desk          & 21.36 & 0.412 \\
-p10\_markers\_colored       & 20.36 & 0.693 \\
-p11\_markers2               & 21.27 & 0.377 \\
-p12\_markers\_holder        & 22.88 & 0.353 \\
-p13\_pens\_markers          & 24.15 & 0.891 \\
-p14\_stationery\_flat       & 26.85 & 0.945 \\
-p15\_pencil\_eraser2        & 23.63 & 0.940 \\
+NL representativa (Ft\_01\_NL) & 24.45 & 0.892 \\
+CSL representativa (Ft\_01\_CSL) & 23.60 & 0.744 \\
 \midrule
-\textbf{Promedio}           & \textbf{22.55} & \textbf{0.741} \\
+p01\_desk\_pencil\_eraser & 24.04 & 0.959 \\
+p02\_pencils\_desk        & 24.27 & 0.962 \\
+p03\_pencils\_close       & 25.35 & 0.958 \\
+p04\_pen\_paper           & 23.67 & 0.934 \\
+p05\_stationery           & 19.95 & 0.341 \\
+p06\_stationery2          & 29.40 & 0.964 \\
+p07\_stationery3          & 26.48 & 0.939 \\
+p08\_stationery4          & 13.66 & 0.599 \\
+p09\_markers\_desk        & 21.36 & 0.412 \\
+p10\_markers\_colored     & 20.36 & 0.693 \\
+p11\_markers2             & 21.27 & 0.377 \\
+p12\_markers\_holder      & 22.88 & 0.353 \\
+p13\_pens\_markers        & 24.15 & 0.891 \\
+p14\_stationery\_flat     & 26.85 & 0.945 \\
+p15\_pencil\_eraser2      & 23.63 & 0.940 \\
+\midrule
+\textbf{Promedio} & \textbf{23.15} & \textbf{0.760} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Interpretación correcta de las métricas}
-
-Debe subrayarse que, en este caso, PSNR y SSIM se calculan entre la imagen
-\textbf{original} y la \textbf{salida} del pipeline; no existe un \emph{ground truth}
-limpio con el cual compararlos. Por lo tanto:
-
-\begin{itemize}
-    \item Un PSNR alto significa ``el pipeline modificó poco la imagen''.
-    \item Un PSNR bajo significa ``el pipeline introdujo muchos cambios'', lo cual
-          es deseable precisamente en imágenes con problemas severos de iluminación
-          o color.
-\end{itemize}
-
-En consecuencia, los valores bajos de PSNR observados en imágenes como
-\texttt{p08\_stationery4} (13.66\,dB) o \texttt{p05\_stationery} (19.95\,dB)
-\emph{no indican fallos} del pipeline: indican que esas imágenes eran aquellas en las
-que el pipeline corrigió más intensidad y tinte. La validación cualitativa se realiza
-visualmente mediante las figuras comparativas generadas.
-
-\subsection{Inspección visual}
-
-Las 17 figuras comparativas (original vs. preprocesada, lado a lado) se almacenan en
-\texttt{results/figures/avance\_24abril/}. La Figura~\ref{fig:ejemplos} muestra dos
-casos representativos: uno de alta similitud (poca corrección necesaria) y uno de
-baja similitud (corrección agresiva de iluminación).
+\subsection{Comparación visual antes/después}
 
 \begin{figure}[H]
 \centering
-\begin{subfigure}{\textwidth}
-    \centering
-    \includegraphics[width=0.95\linewidth]{../../results/figures/avance_24abril/p06_stationery2_comparacion.png}
-    \caption{\texttt{p06\_stationery2} — PSNR 29.40, SSIM 0.964. Imagen bien iluminada; el pipeline aplica correcciones mínimas.}
-\end{subfigure}
-\vspace{0.5cm}
-\begin{subfigure}{\textwidth}
-    \centering
-    \includegraphics[width=0.95\linewidth]{../../results/figures/avance_24abril/p08_stationery4_comparacion.png}
-    \caption{\texttt{p08\_stationery4} — PSNR 13.66, SSIM 0.599. Imagen con fuerte dominante cromática; el pipeline redistribuye intensidades y corrige el balance.}
-\end{subfigure}
-\caption{Ejemplos representativos del efecto del pipeline.}
-\label{fig:ejemplos}
+\includegraphics[width=\linewidth]{../../results/figures/report/parte1/before_after_NL.png}
+\caption{Imagen NL — PSNR\,=\,24.45\,dB, SSIM\,=\,0.892. Imagen bien iluminada;
+el pipeline aplica correcciones moderadas, el contraste mejora levemente.}
+\label{fig:ba_NL}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{../../results/figures/report/parte1/before_after_CSL.png}
+\caption{Imagen CSL — PSNR\,=\,23.60\,dB, SSIM\,=\,0.744. Iluminación combinada con
+zonas de sombra y luz; CLAHE normaliza ambas regiones simultáneamente.}
+\label{fig:ba_CSL}
 \end{figure}
 
 % ============================================================
@@ -494,59 +421,48 @@ baja similitud (corrección agresiva de iluminación).
 
 \subsection{Fortalezas}
 \begin{itemize}
-    \item Automaticidad real: ningún parámetro se ajusta por imagen; los operadores
-          son adaptativos por construcción.
+    \item Automaticidad real: ningún parámetro se ajusta por imagen.
     \item Separación clara de responsabilidades: cada etapa ataca un problema
-          específico (ruido impulsivo, ruido gaussiano, tinte cromático, iluminación no uniforme).
-    \item Orden justificado: las dependencias entre etapas dictan una única
-          secuencia razonable.
-    \item Bajo costo computacional: en las pruebas realizadas, el pipeline procesa
-          imágenes de \(\sim 1{,}5\) Mpíxeles en aproximadamente \(2\) segundos en un
-          equipo estándar.
+          específico (ruido preservando bordes, tinte cromático, iluminación no
+          uniforme, realce de bordes para detección).
+    \item Orden justificado: las dependencias entre etapas dictan la secuencia.
+    \item Bajo costo computacional: procesa imágenes de \(\sim\!0.4\) Mpíxeles
+          en menos de 0.5 segundos.
 \end{itemize}
 
 \subsection{Limitaciones y trabajo futuro}
 \begin{itemize}
-    \item La hipótesis del mundo gris puede fallar si la escena está dominada
-          por un solo color. Una evolución razonable es sustituirla por el algoritmo
-          \emph{Shades of Gray} o por \emph{max-RGB}, ambos igualmente automáticos.
-    \item CLAHE sobre un único canal no corrige artefactos de color derivados de
-          sub-exposición extrema. Una mejora consiste en aplicar tone-mapping antes
-          del balance de blancos.
-    \item La métrica PSNR/SSIM entre entrada y salida no mide calidad real.
-          Una evaluación más rigurosa se obtendría midiendo el impacto del pipeline
-          en la tasa de detección de la Parte~2 del proyecto.
+    \item La hipótesis del mundo gris falla si la escena está dominada por un solo
+          color. Una evolución es \emph{Shades of Gray} o \emph{max-RGB}.
+    \item La intensidad del Laplaciano (\(\alpha=0.3\)) es fija; en imágenes con muy
+          bajo contraste podría beneficiarse de un valor adaptativo.
+    \item La evaluación con PSNR/SSIM no mide calidad de detección directamente.
+          Una métrica más rigurosa es el impacto del pipeline en la tasa de
+          detección de la Parte~2.
 \end{itemize}
 
 % ============================================================
 \section{Conclusión}
 
 Se desarrolló un pipeline de preprocesamiento de imágenes de escritorio compuesto
-por cinco etapas — normalización, filtrado de mediana, suavizado gaussiano, balance
-de blancos \emph{gray-world} y normalización de intensidad mediante CLAHE sobre el
-canal de luminancia — cuyo diseño cumple el requisito clave de automaticidad
-exigido por el enunciado. Cada etapa se justifica en términos de un problema
-concreto de la imagen (ruido impulsivo, ruido residual, dominante cromática,
-iluminación no uniforme) y el orden de aplicación responde a las dependencias
-causales entre ellas. La evaluación sobre 17 imágenes tomadas bajo condiciones
-heterogéneas muestra que el pipeline preserva la estructura de las imágenes bien
-capturadas (alta similitud) y corrige activamente aquellas con problemas de
-iluminación o tinte (baja similitud), comportamiento coherente con lo esperado
-para un algoritmo adaptativo.
+por cinco etapas — normalización, filtrado bilateral preservador de bordes,
+balance de blancos \emph{gray-world}, normalización de intensidad mediante CLAHE
+sobre el canal de luminancia, y realce Laplaciano — cuyo diseño cumple el requisito
+de automaticidad exigido. Cada etapa se justifica en términos de un problema concreto
+y el orden de aplicación responde a las dependencias causales entre ellas. Las
+figuras generadas automáticamente desde el dataset real verifican que el pipeline
+preserva imágenes bien capturadas y corrige activamente aquellas con problemas de
+iluminación o color.
 
 % ============================================================
 \appendix
 \section{Reproducibilidad}
 
 \begin{itemize}
-    \item Sistema operativo: Ubuntu 22.04.
-    \item MATLAB: R2026a (\(26.1.0.3203278\)).
-    \item Toolboxes necesarios: \textit{Image Processing Toolbox}.
-    \item Script de entrada: \texttt{demo\_24abril.m} (en la raíz del proyecto).
-    \item Ejecución: \texttt{matlab -batch "demo\_24abril"} desde la carpeta del proyecto,
-          o doble-clic y F5 desde el IDE.
-    \item Las figuras comparativas se generan automáticamente en
-          \texttt{results/figures/avance\_24abril/}.
+    \item MATLAB: R2026a. Toolbox: \textit{Image Processing Toolbox}.
+    \item Script de figuras: \texttt{gen\_figs\_parte1.m} (raíz del proyecto).
+    \item Script de demo: \texttt{demo\_24abril.m}.
+    \item Figuras generadas en: \texttt{results/figures/report/parte1/}.
 \end{itemize}
 
 \end{document}

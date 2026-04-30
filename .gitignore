@@ -1,6 +1,7 @@
 dataset/raw/
 dataset/ground_truth/
 results/
+!results/figures/report/
 *.asv
 .claude/settings.local.json
 # imagen muy pesada (13MB) — guardar en Google Drive
